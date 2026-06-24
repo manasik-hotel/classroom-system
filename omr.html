@@ -122,6 +122,7 @@
   <p>تصميم النماذج وتصحيحها بالكاميرا أو الماسح الضوئي</p>
   <nav class="tabs">
     <button id="tab-design" class="active" onclick="showTab('design')">🖨️ التصميم</button>
+    <button id="tab-students" onclick="showTab('students')">👥 الطلاب</button>
     <button id="tab-grade" onclick="showTab('grade')">📷 التصحيح</button>
     <button id="tab-results" onclick="showTab('results')">📊 النتائج</button>
     <button id="tab-cloud" onclick="showTab('cloud')">☁️ الحفظ</button>
@@ -157,12 +158,18 @@
       </label>
       <div class="row">
         <label class="field">خانات رقم الجلوس
-          <input id="cfgSeatDigits" type="number" min="1" max="8" value="5">
+          <input id="cfgSeatDigits" type="number" min="1" max="10" value="10">
         </label>
         <label class="field">خانات الصف
           <input id="cfgGradeDigits" type="number" min="1" max="3" value="2">
         </label>
       </div>
+
+      <label class="field" style="display:flex;align-items:center;gap:8px;flex-direction:row;justify-content:space-between;background:#f3faf8;border:1px solid var(--teal-l);border-radius:10px;padding:10px 12px">
+        <span>🔗 باركود QR لكل طالب <span style="font-weight:400;color:var(--muted);font-size:11px">(نسخة مطبوعة لكل طالب باسمه)</span></span>
+        <input id="cfgQrMode" type="checkbox" style="width:22px;height:22px" onchange="onQrModeChange()">
+      </label>
+      <p class="hint" id="qrModeHint" style="display:none">عند التفعيل: تُخفى خانات تظليل رقم الجلوس، ويُطبع لكل طالب نسخته الخاصة باسمه ورقم جلوسه وباركود QR. عند التصحيح يُقرأ الباركود تلقائياً فيُربط الطالب بدرجته دون أي إدخال يدوي. أضف الطلاب من تبويب «الطلاب» ثم استخدم زر «طباعة نسخة لكل طالب».</p>
 
       <label class="field">عدد الأسئلة في كل عمود
         <input id="cfgPerCol" type="number" min="5" max="40" value="20">
@@ -174,11 +181,47 @@
     <div class="card">
       <h2 class="no-print">معاينة البطاقة</h2>
       <div id="sheetHost"></div>
-      <button class="ghost no-print" style="margin-top:12px" onclick="window.print()">🖨️ طباعة البطاقة</button>
+      <button class="ghost no-print" style="margin-top:12px" onclick="window.print()">🖨️ طباعة البطاقة (نموذج فارغ)</button>
+      <button id="printPerStudentBtn" class="primary no-print" style="margin-top:10px;display:none" onclick="printAllStudents()">🖨️ طباعة نسخة لكل طالب (بالباركود)</button>
     </div>
   </section>
 
-  <!-- ================= GRADE ================= -->
+  <!-- ================= STUDENTS ================= -->
+  <section id="panel-students" class="panel">
+    <div class="card">
+      <h2>قائمة الطلاب <span class="sub">الاسم + رقم الجلوس لكل طالب</span></h2>
+      <p class="hint" style="margin-top:0">عند التصحيح يُقرأ باركود الطالب فيُطابَق رقم الجلوس مع هذه القائمة، فيُربط الاسم والدرجة تلقائياً. تُحفظ القائمة سحابياً مع اختباراتك.</p>
+      <div class="row" style="margin-bottom:10px">
+        <label class="field" style="flex:2">اسم الطالب
+          <input id="stName" placeholder="مثال: محمد نجيب حكمي">
+        </label>
+        <label class="field" style="flex:1.4">رقم الجلوس
+          <input id="stSeat" inputmode="numeric" placeholder="1061532883">
+        </label>
+        <label class="field" style="flex:.8">الصف
+          <input id="stClass" placeholder="101">
+        </label>
+      </div>
+      <button class="primary" onclick="addStudentManual()">➕ إضافة الطالب</button>
+    </div>
+
+    <div class="card">
+      <h2>استيراد دفعة <span class="sub">لصق من Excel أو كتابة سطر لكل طالب</span></h2>
+      <p class="hint" style="margin-top:0">سطر لكل طالب بالصيغة: <b>رقم الجلوس , الاسم , الصف</b> — مثال:<br>1061532883 , محمد نجيب حكمي , 101</p>
+      <textarea id="stBulk" rows="5" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;font-weight:600;color:var(--ink);background:#fcfdfd" placeholder="1061532883 , محمد نجيب حكمي , 101&#10;1061532884 , أحمد علي , 101"></textarea>
+      <button class="primary" style="margin-top:10px" onclick="importStudents()">⬆️ استيراد القائمة</button>
+    </div>
+
+    <div class="card">
+      <h2>الطلاب المسجّلون <span class="sub" id="stCount">٠ طالب</span></h2>
+      <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد. أضف طالباً أو استورد دفعة.</div></div>
+      <div class="row" style="margin-top:12px">
+        <button class="ghost" onclick="saveStudentsToCloud(true)">⬆️ حفظ سحابياً</button>
+        <button class="ghost" onclick="loadStudentsFromCloud(true)">⬇️ تحميل</button>
+        <button class="ghost" style="color:var(--bad)" onclick="clearStudents()">🗑️ مسح الكل</button>
+      </div>
+    </div>
+  </section>
   <section id="panel-grade" class="panel">
     <div class="card">
       <h2>١) مفتاح الإجابة <span class="sub">اختر الإجابة الصحيحة لكل سؤال</span></h2>
@@ -291,6 +334,8 @@
 <!-- Firebase (compat) — يُربط بمشروعك نفسه -->
 <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
+<!-- مولّد رمز QR (خفيف، لطباعة باركود كل طالب) -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <!-- محرّك OpenCV.js — المسار الرسمي الصحيح (~8م.ب، يُحمّل مرة ثم يُحفظ مؤقتاً) -->
 <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onCvReady()" onerror="onCvError()"></script>
 <script>
@@ -308,12 +353,14 @@ const state = {
     title:'', sub:'', perCol:20,
     sections:[ { type:'mcq', count:40, opts:4 } ],
     numQ:40,
-    idEnabled:true, seatDigits:5, gradeDigits:2,
-    sheetType:'full'    // full | cards | qa
+    idEnabled:true, seatDigits:10, gradeDigits:2,
+    sheetType:'full',    // full | cards | qa
+    qrMode:false         // باركود QR لكل طالب
   },
   meta:[],           // مصفوفة مشتقّة: نوع وخيارات كل سؤال
   key:[],            // مفتاح الإجابة: قيمة كل سؤال = رقم الخيار أو null
   results:[],
+  students:[],       // قائمة الطلاب: {seat, name, klass}
   cvReady:false,
   corners:[],
   imgLoaded:false,
@@ -376,14 +423,28 @@ function computeLayout(){
   const fid = [ {x:inset,y:inset}, {x:CW-inset,y:inset}, {x:CW-inset,y:CH-inset}, {x:inset,y:CH-inset} ];
 
   let qLeft, qRight, gridTop, box=null, idLayout;
+  const qrMode = cfg.qrMode;
+  let qr = null;
   if(isQA){
-    idLayout = computeIdTop(64, true, CW);              // رقم الجلوس فقط أعلى البطاقة
-    gridTop = (idLayout.enabled ? idLayout.bottomY : 120) + 18;
-    qLeft = M; qRight = CW - M;
+    if(qrMode){
+      idLayout = { enabled:false, bottomY:64, cols:[], mode:'top' };
+      qr = { x: CW-60-150, y: 56, size: 120 };   // أعلى يمين بطاقة الإجابة
+      gridTop = 200;
+      qLeft = M; qRight = CW - M;
+    } else {
+      idLayout = computeIdTop(64, true, CW);              // رقم الجلوس فقط أعلى البطاقة
+      gridTop = (idLayout.enabled ? idLayout.bottomY : 120) + 18;
+      qLeft = M; qRight = CW - M;
+    }
   } else {
     const boxW=296, boxRight=CW-M, boxLeft=boxRight-boxW, boxTop=178, boxBottom=648;
     box = { x:boxLeft, y:boxTop, w:boxW, h:boxBottom-boxTop, right:boxRight, bottom:boxBottom };
-    idLayout = computeIdBox(box);
+    if(qrMode){
+      idLayout = { enabled:false, bottomY:boxTop, cols:[], mode:'box' };
+      qr = { x: boxLeft + (boxW-190)/2, y: boxTop + 250, size: 190 };  // داخل صندوق الطالب
+    } else {
+      idLayout = computeIdBox(box);
+    }
     gridTop = boxTop;
     qLeft = M; qRight = boxLeft - 24;
   }
@@ -434,7 +495,7 @@ function computeLayout(){
     y = top + sm.rowsTall*rowH + gapBetween;
   }
   return { rowH, r, questions, headers, idLayout, gridTop, gridBottom, box, isQA, qLeft, qRight,
-           W:CW, H:CH, fid, fidSize };
+           W:CW, H:CH, fid, fidSize, qr };
 }
 
 /* ============================================================
@@ -445,9 +506,10 @@ function readCfg(){
   state.cfg.sub    = document.getElementById('cfgSub').value;
   state.cfg.perCol = Math.max(5, Math.min(40, +document.getElementById('cfgPerCol').value||20));
   state.cfg.idEnabled = document.getElementById('cfgIdEnabled').checked;
-  state.cfg.seatDigits = Math.max(1, Math.min(8, +document.getElementById('cfgSeatDigits').value||5));
+  state.cfg.seatDigits = Math.max(1, Math.min(10, +document.getElementById('cfgSeatDigits').value||10));
   state.cfg.gradeDigits = Math.max(1, Math.min(3, +document.getElementById('cfgGradeDigits').value||2));
   state.cfg.sheetType = document.getElementById('cfgSheetType').value;
+  state.cfg.qrMode = document.getElementById('cfgQrMode').checked;
   sanitizeSections();
   buildMeta();
   // إعادة ضبط طول المفتاح مع الحفاظ على ما أمكن
@@ -559,7 +621,8 @@ function updateSection(i,field,val){
 }
 
 // يبني محتوى ورقة واحدة (إحداثيات 1000×1414) — يُعاد استخدامه لكل الأشكال
-function buildContentSVG(L){
+// student اختياري: عند تمريره تُطبع بياناته ويُرسم باركود QR حقيقي
+function buildContentSVG(L, student){
   const c = state.cfg;
   const W=L.W, H=L.H, fid=L.fid, fs=L.fidSize;
   let svg = '';
@@ -572,7 +635,9 @@ function buildContentSVG(L){
 
   if(L.isQA){
     svg += `<text x="${W/2}" y="44" text-anchor="middle" font-size="20" font-weight="bold" fill="#0b5a54">${escapeXml(c.title)}</text>`;
-    if(id.enabled){
+    if(L.qr){
+      svg += qrBlockSVG(L.qr, student);
+    } else if(id.enabled){
       svg += rlabel('رقم الجلوس', id.seatRightX, id.labelY, 13);
       const firstSeatX = id.cols[0] ? id.cols[0].cx : W-72;
       for(let d=0; d<10; d++) svg += `<text x="${firstSeatX + id.r + 12}" y="${id.digitsTop + d*id.vGap + 4}" text-anchor="middle" font-size="11" fill="#9aa7ab">${d}</text>`;
@@ -586,16 +651,27 @@ function buildContentSVG(L){
     svg += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#fcfdfd" stroke="#cfd9d7" stroke-width="1.6" rx="10"/>`;
     svg += `<text x="${b.right-14}" y="${b.y+30}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#0b5a54">بيانات الطالب</text>`;
     const lx = b.x+14, rx = b.right-14;
-    const nameLine = (lbl,yy)=>{ const w = measureTextW(lbl,13); return rlabel(lbl, rx, yy, 13) + dotted(lx, rx - w - 8, yy+4); };
-    svg += nameLine('الاسم:', b.y+64);
-    svg += nameLine('المدرسة:', b.y+98);
-    svg += nameLine('الصف / الفصل:', b.y+132);
-    if(id.enabled){
-      svg += rlabel('رقم الجلوس', id.seatRightX, id.labelY, 12);
-      if(id.gradeN>0) svg += rlabel('الصف', id.gradeRightX, id.labelY, 12);
-      const firstSeatX = id.cols[0] ? id.cols[0].cx : rx;
-      for(let d=0; d<10; d++) svg += `<text x="${firstSeatX + id.r + 11}" y="${id.digitsTop + d*id.vGap + 4}" text-anchor="middle" font-size="10" fill="#9aa7ab">${d}</text>`;
-      svg += idBubblesSVG(id);
+    if(L.qr){
+      // وضع الباركود: اسم ورقم الجلوس مطبوعان + باركود QR
+      const nm = student ? student.name : '——————————';
+      const seat = student ? student.seat : '——————————';
+      const klass = student ? (student.klass||c.sub||'') : '';
+      svg += rlabel('الاسم: ' + nm, rx, b.y+64, 14);
+      svg += rlabel('رقم الجلوس: ' + seat, rx, b.y+96, 14);
+      if(klass) svg += rlabel('الصف: ' + klass, rx, b.y+128, 13);
+      svg += qrBlockSVG(L.qr, student);
+    } else {
+      const nameLine = (lbl,yy)=>{ const w = measureTextW(lbl,13); return rlabel(lbl, rx, yy, 13) + dotted(lx, rx - w - 8, yy+4); };
+      svg += nameLine('الاسم:', b.y+64);
+      svg += nameLine('المدرسة:', b.y+98);
+      svg += nameLine('الصف / الفصل:', b.y+132);
+      if(id.enabled){
+        svg += rlabel('رقم الجلوس', id.seatRightX, id.labelY, 12);
+        if(id.gradeN>0) svg += rlabel('الصف', id.gradeRightX, id.labelY, 12);
+        const firstSeatX = id.cols[0] ? id.cols[0].cx : rx;
+        for(let d=0; d<10; d++) svg += `<text x="${firstSeatX + id.r + 11}" y="${id.digitsTop + d*id.vGap + 4}" text-anchor="middle" font-size="10" fill="#9aa7ab">${d}</text>`;
+        svg += idBubblesSVG(id);
+      }
     }
     svg += `<text x="${L.qRight}" y="168" direction="rtl" text-anchor="start" font-size="12" font-weight="bold" fill="#5b6f76">ظلّل دائرة واحدة فقط لكل سؤال</text>`;
   }
@@ -626,6 +702,41 @@ function idBubblesSVG(id){
   }
   return s;
 }
+// كتلة الباركود: خلفية بيضاء + رمز QR حقيقي (إن مُرّر طالب) أو إطار مكان (في المعاينة)
+function qrBlockSVG(qr, student){
+  const x=qr.x, y=qr.y, sz=qr.size, pad=8;
+  let s = `<rect x="${x-pad}" y="${y-pad}" width="${sz+pad*2}" height="${sz+pad*2+20}" fill="#fff" stroke="#cfd9d7" stroke-width="1.4" rx="6"/>`;
+  if(student && student.seat && typeof qrcode !== 'undefined'){
+    s += qrModulesSVG(String(student.seat), x, y, sz);
+    s += `<text x="${x+sz/2}" y="${y+sz+14}" text-anchor="middle" font-size="11" font-weight="bold" fill="#15242b">${escapeXml(student.seat)}</text>`;
+  } else {
+    s += `<rect x="${x}" y="${y}" width="${sz}" height="${sz}" fill="#f3f6f5" stroke="#c2cccd" stroke-width="1.2" stroke-dasharray="5 5"/>`;
+    s += `<text x="${x+sz/2}" y="${y+sz/2-4}" text-anchor="middle" font-size="13" fill="#9aa7ab">باركود QR</text>`;
+    s += `<text x="${x+sz/2}" y="${y+sz/2+16}" text-anchor="middle" font-size="11" fill="#9aa7ab">يُطبع لكل طالب</text>`;
+  }
+  return s;
+}
+// يبني وحدات QR كمربعات SVG (يضمّن داخل الـ SVG فيُطبع بدقة)
+function qrModulesSVG(text, x, y, size){
+  const qr = qrcode(0, 'M');     // نوع تلقائي، تصحيح أخطاء متوسط
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
+  const margin = 2;              // منطقة هدوء (وحدتان)
+  const cell = size/(n + margin*2);
+  let s = `<rect x="${x}" y="${y}" width="${size}" height="${size}" fill="#fff"/>`;
+  let rects = '';
+  for(let r=0;r<n;r++){
+    for(let col=0;col<n;col++){
+      if(qr.isDark(r,col)){
+        const px = x + (col+margin)*cell;
+        const py = y + (r+margin)*cell;
+        rects += `<rect x="${px.toFixed(2)}" y="${py.toFixed(2)}" width="${(cell+0.4).toFixed(2)}" height="${(cell+0.4).toFixed(2)}" fill="#000"/>`;
+      }
+    }
+  }
+  return s + rects;
+}
 
 function onSheetTypeChange(){
   state.cfg.sheetType = document.getElementById('cfgSheetType').value;
@@ -633,17 +744,19 @@ function onSheetTypeChange(){
   renderSections();
   renderSheet();
 }
+function onQrModeChange(){
+  const on = document.getElementById('cfgQrMode').checked;
+  document.getElementById('qrModeHint').style.display = on ? 'block' : 'none';
+  renderSheet();
+}
 
-function renderSheet(){
-  readCfg();
-  const L = computeLayout();
-  const content = buildContentSVG(L);
+// يبني الـ SVG الكامل لورقة واحدة حسب الشكل المختار، اختيارياً لطالب بعينه
+function buildSheetSVG(L, student){
+  const content = buildContentSVG(L, student);
   const type = state.cfg.sheetType;
   const open = `<svg viewBox="0 0 ${CANVAS_W} ${CANVAS_H}" xmlns="http://www.w3.org/2000/svg" font-family="Tahoma, Arial, sans-serif">`;
   let svg;
-
   if(type === 'cards'){
-    // ٤ بطاقات (٢×٢) في صفحة A4، كل بطاقة ورقة مستقلة بأركانها — تُقصّ وتُمسح منفردة
     const gap = 22;
     const s = ((CANVAS_W - 3*gap)/2) / CANVAS_W;
     const cardW = CANVAS_W*s, cardH = CANVAS_H*s;
@@ -652,39 +765,46 @@ function renderSheet(){
     for(const [tx,ty] of pos){
       svg += `<g transform="translate(${tx},${ty}) scale(${s})">${content}</g>`;
     }
-    // خطوط القص (في منتصف الفراغات)
     const cutY = gap + cardH + gap/2;
     svg += `<line x1="${CANVAS_W/2}" y1="6" x2="${CANVAS_W/2}" y2="${CANVAS_H-6}" stroke="#c2cccd" stroke-width="1.4" stroke-dasharray="6 6"/>`;
     svg += `<line x1="6" y1="${cutY}" x2="${CANVAS_W-6}" y2="${cutY}" stroke="#c2cccd" stroke-width="1.4" stroke-dasharray="6 6"/>`;
     svg += `<text x="${CANVAS_W/2}" y="${cutY-6}" text-anchor="middle" font-size="11" fill="#9aa7ab">— تُقصّ على الخطوط —</text>`;
     svg += `</svg>`;
   } else if(type === 'qa'){
-    // تقسيم عرضي: الأسئلة (أعلى) + بطاقة الإجابة الأفقية (أسفل) بأركانها حولها
     const s = 0.9;
     const aw = L.W*s, ah = L.H*s;
-    const tx = (CANVAS_W - aw)/2, ty = CANVAS_H - ah - 36;   // أسفل الصفحة
+    const tx = (CANVAS_W - aw)/2, ty = CANVAS_H - ah - 36;
     svg = open + `<rect x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" fill="#fff"/>`;
-    // منطقة الأسئلة (أعلى)
     const qx=44, qy=60, qw=CANVAS_W-88, qh=ty-qy-20;
     svg += `<rect x="${qx}" y="${qy}" width="${qw}" height="${qh}" fill="none" stroke="#cfd9d7" stroke-width="1.5" rx="10"/>`;
-    svg += `<text x="${qx+qw-16}" y="${qy+34}" direction="rtl" text-anchor="start" font-size="18" font-weight="bold" fill="#0b5a54">الأسئلة</text>`;
+    let qTitle = 'الأسئلة';
+    if(student) qTitle = `الأسئلة — ${student.name} (${student.seat})`;
+    svg += `<text x="${qx+qw-16}" y="${qy+34}" direction="rtl" text-anchor="start" font-size="18" font-weight="bold" fill="#0b5a54">${escapeXml(qTitle)}</text>`;
     for(let yy=qy+58; yy<qy+qh-16; yy+=42){
       svg += `<line x1="${qx+20}" y1="${yy}" x2="${qx+qw-20}" y2="${yy}" stroke="#e3eae9" stroke-width="1.2"/>`;
     }
-    // بطاقة الإجابة (أسفل) — أفقية مستقلة بأركانها
     svg += `<g transform="translate(${tx},${ty}) scale(${s})">${content}</g>`;
     svg += `</svg>`;
   } else {
     svg = open + content + `</svg>`;
   }
+  return svg;
+}
 
-  document.getElementById('sheetHost').innerHTML = svg;
+function renderSheet(){
+  readCfg();
+  const L = computeLayout();
+  document.getElementById('sheetHost').innerHTML = buildSheetSVG(L, null);
+  const type = state.cfg.sheetType;
   const tip = document.getElementById('gradeTip');
   if(tip){
     if(type==='cards') tip.textContent = 'الشكل الحالي: بطاقات. اقصص الورقة على الخطوط المتقطّعة إلى ٤ بطاقات، ثم امسح كل بطاقة على حدة (كل بطاقة لها أركانها الأربعة).';
     else if(type==='qa') tip.textContent = 'الشكل الحالي: أسئلة + إجابة. عند المسح وجّه الكاميرا نحو بطاقة الإجابة (أسفل الورقة) بحيث تملأ الإطار وتظهر أركانها الأربعة.';
     else tip.textContent = 'الشكل الحالي: ورقة كاملة. امسح الورقة كاملةً مع ظهور المربعات الأربعة.';
   }
+  // زر طباعة نسخة لكل طالب يظهر فقط في وضع الباركود
+  const pbtn = document.getElementById('printPerStudentBtn');
+  if(pbtn) pbtn.style.display = state.cfg.qrMode ? 'block' : 'none';
   buildKeyGrid();
 }
 
@@ -734,6 +854,103 @@ function clearKey(){ state.key = new Array(state.cfg.numQ).fill(null); buildKeyG
 function autoFillKeyDemo(){
   for(let q=0;q<state.cfg.numQ;q++) state.key[q] = q % state.meta[q].opts;
   buildKeyGrid();
+}
+
+/* ============================================================
+   إدارة الطلاب + طباعة نسخة لكل طالب (بالباركود)
+   ============================================================ */
+function normalizeSeat(s){ return String(s||'').replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).replace(/\D/g,''); }
+
+function addStudentManual(){
+  const name = (document.getElementById('stName').value||'').trim();
+  const seat = normalizeSeat(document.getElementById('stSeat').value);
+  const klass = (document.getElementById('stClass').value||'').trim();
+  if(!seat){ alert('أدخل رقم الجلوس.'); return; }
+  if(!name){ alert('أدخل اسم الطالب.'); return; }
+  upsertStudent({ seat, name, klass });
+  document.getElementById('stName').value='';
+  document.getElementById('stSeat').value='';
+  renderStudents(); saveStudentsToCloud();
+}
+function importStudents(){
+  const txt = document.getElementById('stBulk').value||'';
+  const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  let added=0;
+  for(const line of lines){
+    const parts = line.split(/[,،\t]/).map(p=>p.trim());
+    if(parts.length<2) continue;
+    const seat = normalizeSeat(parts[0]);
+    const name = parts[1];
+    const klass = parts[2]||'';
+    if(seat && name){ upsertStudent({ seat, name, klass }); added++; }
+  }
+  document.getElementById('stBulk').value='';
+  renderStudents(); saveStudentsToCloud();
+  alert(`تم استيراد/تحديث ${toArabic(added)} طالب.`);
+}
+function upsertStudent(st){
+  const i = state.students.findIndex(s=>s.seat===st.seat);
+  if(i>=0) state.students[i] = st; else state.students.push(st);
+}
+function delStudent(seat){
+  state.students = state.students.filter(s=>s.seat!==seat);
+  renderStudents(); saveStudentsToCloud();
+}
+function clearStudents(){
+  if(!state.students.length) return;
+  if(!confirm('مسح جميع الطلاب؟')) return;
+  state.students = [];
+  renderStudents(); saveStudentsToCloud();
+}
+function findStudent(seat){
+  const s = normalizeSeat(seat);
+  return state.students.find(x=>x.seat===s) || null;
+}
+function renderStudents(){
+  const host = document.getElementById('studentsHost');
+  document.getElementById('stCount').textContent = `${toArabic(state.students.length)} طالب`;
+  if(!state.students.length){ host.innerHTML='<div class="empty">لا يوجد طلاب بعد. أضف طالباً أو استورد دفعة.</div>'; return; }
+  let html='<table><thead><tr><th>#</th><th>رقم الجلوس</th><th>الاسم</th><th>الصف</th><th></th></tr></thead><tbody>';
+  state.students.forEach((s,i)=>{
+    html += `<tr>
+      <td>${i+1}</td>
+      <td style="font-weight:700">${escapeHtml(s.seat)}</td>
+      <td style="text-align:right">${escapeHtml(s.name)}</td>
+      <td>${escapeHtml(s.klass||'—')}</td>
+      <td><button class="ghost" style="padding:6px 8px" onclick="delStudent('${s.seat}')">حذف</button></td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  host.innerHTML=html;
+}
+
+// طباعة نسخة مخصّصة لكل طالب (كل واحدة في صفحة مستقلة) مع باركود QR
+function printAllStudents(){
+  readCfg();
+  if(typeof qrcode==='undefined'){ alert('مكتبة الباركود لم تُحمّل. تأكد من الاتصال بالإنترنت وأعد المحاولة.'); return; }
+  if(!state.students.length){ alert('لا يوجد طلاب. أضِف الطلاب من تبويب «الطلاب» أولاً.'); return; }
+  if(!state.cfg.qrMode){ alert('فعّل خيار «باركود QR لكل طالب» أولاً.'); return; }
+  const L = computeLayout();
+  let pages = '';
+  for(const st of state.students){
+    const svg = buildSheetSVG(L, st);
+    pages += `<div class="page">${svg}</div>`;
+  }
+  const win = window.open('', '_blank');
+  if(!win){ alert('منع المتصفّح فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة.'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+    <title>نسخ الطلاب — ${escapeHtml(state.cfg.title)}</title>
+    <style>
+      *{margin:0;padding:0;box-sizing:border-box}
+      body{font-family:Tahoma,Arial,sans-serif}
+      .page{width:100%;page-break-after:always;display:flex;justify-content:center;align-items:flex-start;padding:8px}
+      .page:last-child{page-break-after:auto}
+      svg{width:100%;max-width:780px;height:auto}
+      @media print{ .page{padding:0} }
+    </style></head><body>${pages}
+    <script>window.onload=function(){setTimeout(function(){window.print();},400);}<\/script>
+    </body></html>`);
+  win.document.close();
 }
 
 /* ============================================================
@@ -944,9 +1161,18 @@ function gradeCore(srcMat, corners, drawVis){
       });
     }
   }
-  // قراءة حقول الأرقام (رقم الجلوس + الصف)
-  let seat='', grade='';
-  if(L.idLayout.enabled){
+  // قراءة الباركود (إن وُجد) — أدقّ وسيلة لتحديد الطالب
+  let seat='', grade='', qrSeat='', matchedName='';
+  if(state.cfg.qrMode){
+    qrSeat = detectQR(gray);
+    if(qrSeat){
+      const st = findStudent(qrSeat);
+      seat = normalizeSeat(qrSeat);
+      if(st){ matchedName = st.name; grade = st.klass||''; }
+    }
+  }
+  // قراءة حقول الأرقام بالتظليل (رقم الجلوس + الصف) — فقط إن لم يُقرأ الباركود
+  if(L.idLayout.enabled && !qrSeat){
     const readCol = (col)=>{
       const fills = col.bubbles.map(b=>refinedFill(ii, L.W, L.H, b, Math.round(col.bubbles[0].r*0.7), Math.round(col.bubbles[0].r*0.7)));
       const order = fills.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
@@ -965,7 +1191,7 @@ function gradeCore(srcMat, corners, drawVis){
 
   srcTri.delete();dstTri.delete();Mt.delete();warp.delete();gray.delete();bin.delete();
   opened.delete();kernel.delete();ii.delete();
-  return { result:{ correct, wrong, blank, multiple, total: state.cfg.numQ, answers, seat, grade }, vis };
+  return { result:{ correct, wrong, blank, multiple, total: state.cfg.numQ, answers, seat, grade, qrSeat, matchedName }, vis };
 }
 
 // التصحيح اليدوي (صورة ملتقطة + أركان منقورة)
@@ -988,16 +1214,40 @@ function gradeSheet(){
   document.getElementById('rCorrect').textContent=result.correct;
   document.getElementById('rWrong').textContent=result.wrong;
   document.getElementById('rBlank').textContent=result.blank;
-  document.getElementById('rName').value = result.seat ? `رقم الجلوس ${result.seat}${result.grade?` · صف ${result.grade}`:''}` : '';
+  let nameVal = '';
+  if(result.matchedName) nameVal = `${result.matchedName} · جلوس ${result.seat}`;
+  else if(result.qrSeat) nameVal = `رقم الجلوس ${result.seat} (غير مسجّل في القائمة)`;
+  else if(result.seat) nameVal = `رقم الجلوس ${result.seat}${result.grade?` · صف ${result.grade}`:''}`;
+  document.getElementById('rName').value = nameVal;
 
   const cs=document.getElementById('cornerStatus');
   cs.className='status ok';
-  cs.textContent = `تم. الأخضر = اختيار صحيح، الأحمر = خطأ، الفيروزي = الإجابة الصحيحة.` + (result.multiple? ` (${result.multiple} سؤال بتظليل مزدوج)`:'');
+  let qrNote = '';
+  if(state.cfg.qrMode){
+    if(result.matchedName) qrNote = ` · ✅ باركود: ${result.matchedName}`;
+    else if(result.qrSeat) qrNote = ` · ⚠️ باركود ${result.seat} غير مسجّل`;
+    else qrNote = ` · ⚠️ لم يُقرأ الباركود`;
+  }
+  cs.textContent = `تم. الأخضر = اختيار صحيح، الأحمر = خطأ، الفيروزي = الإجابة الصحيحة.` + (result.multiple? ` (${result.multiple} سؤال بتظليل مزدوج)`:'') + qrNote;
 }
 
 // مجموع قيم نافذة باستخدام الصورة التكاملية (سريع جداً)
 function winSum(ii,x,y,w,h){
   return ii.doublePtr(y+h)[x+w] - ii.doublePtr(y)[x+w] - ii.doublePtr(y+h)[x] + ii.doublePtr(y)[x];
+}
+// كشف باركود QR وقراءة رقم الجلوس منه (يستخدم محرّك OpenCV نفسه)
+let _qrDetector = null;
+function detectQR(grayMat){
+  try{
+    if(typeof cv==='undefined' || typeof cv.QRCodeDetector!=='function') return '';
+    if(!_qrDetector) _qrDetector = new cv.QRCodeDetector();
+    let pts = new cv.Mat(), straight = new cv.Mat();
+    let txt = '';
+    try{ txt = _qrDetector.detectAndDecode(grayMat, pts, straight) || ''; }
+    catch(e){ txt = ''; }
+    pts.delete(); straight.delete();
+    return normalizeSeat(txt);
+  }catch(e){ return ''; }
 }
 // أعلى نسبة تظليل في محيط الدائرة — يمتص الميلان والانحراف البسيط
 function refinedFill(ii, W, H, b, sx, sy){
@@ -1161,12 +1411,13 @@ function liveLoop(ts){
 
 function onLiveCaptured(result){
   live.count++;
-  const nm = result.seat ? `جلوس ${result.seat}` : `ورقة ${state.results.length+1}`;
+  const nm = result.matchedName ? result.matchedName
+           : (result.seat ? `جلوس ${result.seat}` : `ورقة ${state.results.length+1}`);
   state.results.push({ name:nm, ...result, at:new Date().toLocaleString('ar-SA') });
   renderResults();
   document.getElementById('liveCount').textContent = toArabic(live.count);
   document.getElementById('liveLast').textContent = `${result.correct}/${result.total}`;
-  const extra = result.seat ? ` · جلوس ${result.seat}` : '';
+  const extra = result.matchedName ? ` · ${result.matchedName}` : (result.seat ? ` · جلوس ${result.seat}` : '');
   setLiveStatus('ok', `✓ تم مسح ورقة (${result.correct}/${result.total})${extra}. أبعدها وقرّب التالية.`);
   beep(); if(navigator.vibrate) navigator.vibrate(120);
   saveResultsToCloud();
@@ -1262,7 +1513,7 @@ function toArabic(n){return String(n).replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d]
    التبويبات
    ============================================================ */
 function showTab(t){
-  ['design','grade','results','cloud'].forEach(x=>{
+  ['design','students','grade','results','cloud'].forEach(x=>{
     document.getElementById('panel-'+x).classList.toggle('active', x===t);
     document.getElementById('tab-'+x).classList.toggle('active', x===t);
   });
@@ -1306,6 +1557,7 @@ function initFirebase(){
     setCloudStatus('ok','✅ متصل بقاعدة البيانات.');
     loadExamsFromCloud();
     loadResultsFromCloud();
+    loadStudentsFromCloud();
   }catch(e){
     setCloudStatus('err','خطأ في الاتصال: '+e.message);
   }
@@ -1378,6 +1630,8 @@ function applyExam(id){
   document.getElementById('cfgSeatDigits').value = c.seatDigits||5;
   document.getElementById('cfgGradeDigits').value = c.gradeDigits||2;
   document.getElementById('cfgSheetType').value = c.sheetType||'full';
+  document.getElementById('cfgQrMode').checked = !!c.qrMode;
+  document.getElementById('qrModeHint').style.display = c.qrMode ? 'block' : 'none';
   state.cfg.sections = JSON.parse(JSON.stringify(c.sections||[{type:'mcq',count:40,opts:4}]));
   state.key = (e.key||[]).slice();
   renderSections();
@@ -1412,12 +1666,30 @@ async function loadResultsFromCloud(manual){
   }catch(e){ if(manual) alert('فشل تحميل النتائج: '+e.message); }
 }
 
+/* ---- الطلاب ---- (تُحفظ ضمن مجموعة exams بمعرّف مستقل students، تفادياً لمجموعات جديدة) */
+async function saveStudentsToCloud(manual){
+  if(!cloudReady){ if(manual) alert('قاعدة البيانات غير مهيّأة.'); return; }
+  try{
+    await cloudSet('exams', 'students', state.students);
+    if(manual) setCloudStatus('ok', `✅ حُفظ ${toArabic(state.students.length)} طالب سحابياً.`);
+  }catch(e){ if(manual) alert('فشل حفظ الطلاب: '+e.message); }
+}
+async function loadStudentsFromCloud(manual){
+  if(!cloudReady){ if(manual) alert('قاعدة البيانات غير مهيّأة.'); return; }
+  try{
+    const data = await cloudGet('exams', 'students');
+    if(Array.isArray(data)){ state.students = data; renderStudents(); }
+    if(manual) setCloudStatus('ok', `✅ حُمّل ${toArabic(state.students.length)} طالب.`);
+  }catch(e){ if(manual) alert('فشل تحميل الطلاب: '+e.message); }
+}
+
 /* ============================================================
    التهيئة
    ============================================================ */
 window.addEventListener('load', ()=>{
   renderSections();
   renderSheet();
+  renderStudents();
   const wrap=document.getElementById('canvasWrap');
   wrap.addEventListener('click', onCanvasTap);
   initFirebase();
