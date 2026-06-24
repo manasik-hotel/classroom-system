@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>نظام التصحيح الآلي — بطاقات الإجابة</title>
+<style>
+  :root{
+    --teal:#0f766e; --teal-d:#0b5a54; --teal-l:#e6f2f0;
+    --ink:#15242b; --muted:#5b6f76; --line:#d8e2e0;
+    --paper:#f6f8f7; --white:#ffffff;
+    --ok:#1f9d55; --bad:#d64545; --warn:#c9870a; --blank:#9aa7ab;
+    --shadow:0 1px 2px rgba(16,40,40,.06),0 8px 24px rgba(16,40,40,.06);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    font-family:"Segoe UI",Tahoma,system-ui,"Helvetica Neue",Arial,sans-serif;
+    background:var(--paper); color:var(--ink); line-height:1.5;
+    -webkit-text-size-adjust:100%;
+  }
+  /* ---- top bar ---- */
+  header.app{
+    background:linear-gradient(180deg,var(--teal),var(--teal-d));
+    color:#fff; padding:14px 16px; position:sticky; top:0; z-index:30;
+    box-shadow:var(--shadow);
+  }
+  header.app h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.2px}
+  header.app p{margin:2px 0 0;font-size:12px;opacity:.85}
+  nav.tabs{display:flex;gap:6px;margin-top:12px}
+  nav.tabs button{
+    flex:1;border:0;border-radius:10px;padding:9px 6px;font-size:13px;font-weight:600;
+    background:rgba(255,255,255,.14);color:#fff;cursor:pointer;transition:.15s;
+  }
+  nav.tabs button.active{background:#fff;color:var(--teal-d)}
+  main{padding:16px;max-width:860px;margin:0 auto}
+  .panel{display:none}
+  .panel.active{display:block;animation:fade .2s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  /* ---- cards & controls ---- */
+  .card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
+  .card h2{margin:0 0 12px;font-size:15px;color:var(--teal-d)}
+  .card h2 .sub{font-weight:400;color:var(--muted);font-size:12px;margin-right:6px}
+  label.field{display:block;margin-bottom:12px;font-size:13px;font-weight:600;color:var(--muted)}
+  label.field input,label.field select{
+    width:100%;margin-top:6px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
+    font:inherit;font-weight:600;color:var(--ink);background:#fcfdfd;
+  }
+  label.field input:focus,label.field select:focus{outline:2px solid var(--teal-l);border-color:var(--teal)}
+  .row{display:flex;gap:10px;flex-wrap:wrap}
+  .row>*{flex:1;min-width:120px}
+  button.primary{
+    width:100%;border:0;background:var(--teal);color:#fff;font:inherit;font-weight:700;
+    padding:13px;border-radius:11px;cursor:pointer;transition:.15s;font-size:14px;
+  }
+  button.primary:active{transform:translateY(1px)}
+  button.ghost{
+    border:1px solid var(--line);background:#fff;color:var(--teal-d);font:inherit;font-weight:700;
+    padding:11px;border-radius:11px;cursor:pointer;width:100%;font-size:14px;
+  }
+  .hint{font-size:12px;color:var(--muted);margin:6px 2px 0;line-height:1.6}
+  .pill{display:inline-block;background:var(--teal-l);color:var(--teal-d);border-radius:999px;padding:2px 10px;font-size:12px;font-weight:700}
+  /* ---- answer key grid ---- */
+  .keygrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:8px}
+  .keyq{border:1px solid var(--line);border-radius:10px;padding:7px 8px;background:#fcfdfd}
+  .keyq .qn{font-size:12px;font-weight:700;color:var(--muted);margin-bottom:5px}
+  .choices{display:flex;gap:5px}
+  .choices button{
+    flex:1;border:1px solid var(--line);background:#fff;border-radius:8px;padding:6px 0;
+    font:inherit;font-weight:700;font-size:13px;color:var(--ink);cursor:pointer;
+  }
+  .choices button.sel{background:var(--teal);color:#fff;border-color:var(--teal)}
+  /* ---- results table ---- */
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:9px 8px;text-align:center;border-bottom:1px solid var(--line)}
+  th{color:var(--muted);font-weight:700;font-size:12px;background:#fafcfb}
+  td .nameinput{width:100%;border:1px solid var(--line);border-radius:7px;padding:6px;font:inherit;text-align:center}
+  .score-good{color:var(--ok);font-weight:800}
+  .score-mid{color:var(--warn);font-weight:800}
+  .score-bad{color:var(--bad);font-weight:800}
+  /* ---- canvas / grading ---- */
+  .canvas-wrap{position:relative;width:100%;background:#0d1416;border-radius:12px;overflow:hidden;touch-action:none}
+  .canvas-wrap canvas{display:block;width:100%;height:auto}
+  .corner-dot{position:absolute;width:26px;height:26px;margin:-13px;border-radius:50%;
+    background:rgba(15,118,110,.9);border:2px solid #fff;color:#fff;font-size:12px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;pointer-events:none}
+  .status{font-size:13px;font-weight:700;padding:10px 12px;border-radius:10px;margin-top:10px}
+  .status.info{background:var(--teal-l);color:var(--teal-d)}
+  .status.warn{background:#fff4e0;color:var(--warn)}
+  .status.err{background:#fdecec;color:var(--bad)}
+  .status.ok{background:#e7f7ee;color:var(--ok)}
+  .resultbox{display:flex;gap:10px;text-align:center;margin-top:12px}
+  .resultbox div{flex:1;background:#fcfdfd;border:1px solid var(--line);border-radius:11px;padding:10px 4px}
+  .resultbox b{display:block;font-size:22px}
+  .resultbox span{font-size:11px;color:var(--muted)}
+  /* ---- printable sheet ---- */
+  #sheetHost{overflow-x:auto;background:#eef2f1;border-radius:12px;padding:14px;text-align:center}
+  #sheetHost svg{background:#fff;box-shadow:var(--shadow);max-width:100%;height:auto}
+  .slider{display:flex;align-items:center;gap:10px;margin-top:8px}
+  .slider input[type=range]{flex:1}
+  .slider b{min-width:42px;text-align:left;color:var(--teal-d)}
+  .empty{text-align:center;color:var(--muted);padding:30px 10px;font-size:13px}
+  .secrow{display:flex;gap:7px;align-items:center;margin-bottom:8px}
+  .secrow select,.secrow input{padding:9px 8px;border:1px solid var(--line);border-radius:9px;font:inherit;font-weight:600;background:#fcfdfd;color:var(--ink);min-width:0}
+  .secrow select{flex:1.4}
+  .secrow input{flex:1;text-align:center}
+  .secrow .del{flex:0 0 auto;border:1px solid var(--line);background:#fff;color:var(--bad);border-radius:9px;width:38px;height:38px;font-size:18px;cursor:pointer}
+  .secrow .lab{font-size:11px;color:var(--muted);text-align:center}
+  @media print{
+    header.app,nav.tabs,.no-print{display:none!important}
+    body{background:#fff}
+    main{padding:0;max-width:none}
+    .card{border:0;box-shadow:none;margin:0;padding:0}
+    #sheetHost{background:#fff;padding:0;overflow:visible}
+    #sheetHost svg{box-shadow:none;width:100%}
+  }
+</style>
+</head>
+<body>
+<header class="app">
+  <h1>نظام التصحيح الآلي لبطاقات الإجابة</h1>
+  <p>تصميم النماذج وتصحيحها بالكاميرا أو الماسح الضوئي</p>
+  <nav class="tabs">
+    <button id="tab-design" class="active" onclick="showTab('design')">🖨️ التصميم</button>
+    <button id="tab-grade" onclick="showTab('grade')">📷 التصحيح</button>
+    <button id="tab-results" onclick="showTab('results')">📊 النتائج</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ================= DESIGN ================= -->
+  <section id="panel-design" class="panel active">
+    <div class="card no-print">
+      <h2>إعدادات النموذج <span class="sub">صمّم بطاقة الإجابة ثم اطبعها</span></h2>
+      <label class="field">عنوان الاختبار
+        <input id="cfgTitle" value="الاختبارات الوطنية — السادس الابتدائي">
+      </label>
+      <label class="field">السطر الفرعي (الإدارة / الجهة)
+        <input id="cfgSub" value="الإدارة العامة للتعليم بمنطقة جازان — إدارة الإشراف التربوي">
+      </label>
+      <label class="field">شكل الورقة
+        <select id="cfgSheetType" onchange="onSheetTypeChange()">
+          <option value="full" selected>ورقة إجابة كاملة (طالب واحد)</option>
+          <option value="cards">بطاقات — ٤ طلاب في ورقة A4</option>
+          <option value="qa">أسئلة + إجابة (نصفان)</option>
+        </select>
+      </label>
+      <div style="margin-bottom:8px;font-size:13px;font-weight:600;color:var(--muted)">أقسام الأسئلة</div>
+      <div id="sectionsHost"></div>
+      <button id="addSectionBtn" class="ghost" style="margin-bottom:12px" onclick="addSection()">+ إضافة قسم</button>
+
+      <div style="margin:6px 0 8px;font-size:13px;font-weight:600;color:var(--muted)">حقول الطالب الآلية (تُقرأ بالتظليل)</div>
+      <label class="field" style="display:flex;align-items:center;gap:8px;flex-direction:row;justify-content:space-between">
+        <span>تفعيل خانتي رقم الجلوس والصف</span>
+        <input id="cfgIdEnabled" type="checkbox" checked style="width:22px;height:22px" onchange="renderSheet()">
+      </label>
+      <div class="row">
+        <label class="field">خانات رقم الجلوس
+          <input id="cfgSeatDigits" type="number" min="1" max="8" value="5">
+        </label>
+        <label class="field">خانات الصف
+          <input id="cfgGradeDigits" type="number" min="1" max="3" value="2">
+        </label>
+      </div>
+
+      <label class="field">عدد الأسئلة في كل عمود
+        <input id="cfgPerCol" type="number" min="5" max="40" value="20">
+      </label>
+      <button class="primary" onclick="renderSheet()">تحديث المعاينة</button>
+      <p class="hint">الأنواع: <b>اختيار من متعدد</b> (٢–٥ خيارات)، <b>صواب/خطأ</b> (ص/خ)، <b>مزاوجة</b> (خياراتها = عدد أسئلتها). كل نوع مرّة واحدة، والأسئلة تُرتّب وتُرقّم تحت كل قسم بدءاً من ١. المربعات السوداء في الأركان ضرورية.</p>
+    </div>
+
+    <div class="card">
+      <h2 class="no-print">معاينة البطاقة</h2>
+      <div id="sheetHost"></div>
+      <button class="ghost no-print" style="margin-top:12px" onclick="window.print()">🖨️ طباعة البطاقة</button>
+    </div>
+  </section>
+
+  <!-- ================= GRADE ================= -->
+  <section id="panel-grade" class="panel">
+    <div class="card">
+      <h2>١) مفتاح الإجابة <span class="sub">اختر الإجابة الصحيحة لكل سؤال</span></h2>
+      <div class="row" style="margin-bottom:10px">
+        <button class="ghost" onclick="autoFillKeyDemo()">تعبئة تجريبية</button>
+        <button class="ghost" onclick="clearKey()">مسح المفتاح</button>
+      </div>
+      <div id="keyGrid" class="keygrid"></div>
+    </div>
+
+    <div class="card">
+      <h2>٢) صورة بطاقة الطالب <span class="sub">من الكاميرا أو ملف ممسوح</span></h2>
+      <p id="gradeTip" class="hint" style="margin-top:0"></p>
+      <input id="fileInput" type="file" accept="image/*" capture="environment" style="display:none" onchange="loadImage(event)">
+      <button class="primary" onclick="document.getElementById('fileInput').click()">📷 التقاط / اختيار صورة (ورقة واحدة)</button>
+      <button class="ghost" style="margin-top:10px" onclick="startLiveScan()">📹 مسح مباشر متعدد — وجّه الكاميرا فقط</button>
+      <div id="opencvStatus" class="status info" style="margin-top:10px">جارٍ تحميل محرّك المعالجة…</div>
+
+      <div id="liveWrap" style="display:none;margin-top:14px">
+        <div class="canvas-wrap" style="position:relative">
+          <video id="liveVideo" playsinline muted autoplay style="display:block;width:100%;height:auto"></video>
+          <canvas id="liveOverlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></canvas>
+        </div>
+        <div id="liveStatus" class="status info">وجّه الكاميرا نحو البطاقة كاملةً مع ظهور المربعات الأربعة.</div>
+        <div class="resultbox" style="margin-top:8px">
+          <div><b id="liveCount" style="color:var(--teal-d)">٠</b><span>تم مسحها</span></div>
+          <div><b id="liveLast" style="color:var(--ok)">—</b><span>آخر درجة</span></div>
+        </div>
+        <p class="hint">تُحفظ كل ورقة تلقائياً في «النتائج» باسم مؤقّت، ويمكنك تعديل الأسماء هناك لاحقاً.</p>
+        <button class="ghost" style="margin-top:6px" onclick="stopLiveScan()">⏹️ إيقاف المسح المباشر</button>
+      </div>
+
+      <div id="gradeArea" style="display:none;margin-top:14px">
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="imgCanvas"></canvas>
+          <div id="dotLayer"></div>
+        </div>
+        <div id="cornerStatus" class="status info">انقر على المربعات السوداء الأربعة بالترتيب: أعلى-يمين، أعلى-يسار، أسفل-يسار، أسفل-يمين.</div>
+        <div class="row" style="margin-top:10px">
+          <button class="ghost" onclick="tryAutoDetect()">✨ كشف الأركان تلقائياً</button>
+          <button class="ghost" onclick="resetCorners()">↺ إعادة تحديد الأركان</button>
+        </div>
+        <div class="slider no-print">
+          <span class="hint" style="margin:0">حساسية التظليل</span>
+          <input id="threshSlider" type="range" min="20" max="70" value="40" oninput="onThreshChange()">
+          <b id="threshVal">40%</b>
+        </div>
+        <button class="primary" style="margin-top:12px" onclick="gradeSheet()">✅ صحّح البطاقة</button>
+      </div>
+    </div>
+
+    <div id="lastResult" class="card" style="display:none">
+      <h2>نتيجة التصحيح</h2>
+      <div class="resultbox">
+        <div><b id="rScore" class="score-good">0</b><span>الدرجة</span></div>
+        <div><b id="rCorrect" style="color:var(--ok)">0</b><span>صحيحة</span></div>
+        <div><b id="rWrong" style="color:var(--bad)">0</b><span>خاطئة</span></div>
+        <div><b id="rBlank" style="color:var(--blank)">0</b><span>متروكة</span></div>
+      </div>
+      <label class="field" style="margin-top:12px">اسم الطالب / رقم الجلوس
+        <input id="rName" placeholder="اكتب الاسم ثم احفظ">
+      </label>
+      <button class="primary" onclick="saveResult()">💾 حفظ في النتائج</button>
+    </div>
+  </section>
+
+  <!-- ================= RESULTS ================= -->
+  <section id="panel-results" class="panel">
+    <div class="card">
+      <h2>سجل النتائج <span class="sub" id="resCount">٠ بطاقة</span></h2>
+      <div id="resultsTableHost"><div class="empty">لا توجد نتائج محفوظة بعد.<br>صحّح بطاقة ثم احفظها لتظهر هنا.</div></div>
+      <button class="ghost no-print" style="margin-top:12px" onclick="exportCSV()">⬇️ تصدير Excel/CSV</button>
+    </div>
+  </section>
+</main>
+
+<!-- محرّك OpenCV.js — المسار الرسمي الصحيح (~8م.ب، يُحمّل مرة ثم يُحفظ مؤقتاً) -->
+<script async src="https://docs.opencv.org/4.x/opencv.js" onload="onCvReady()" onerror="onCvError()"></script>
+<script>
+/* ============================================================
+   الحالة العامة
+   ============================================================ */
+const LETTERS = ['أ','ب','ج','د','هـ','و','ز','ح','ط','ي'];
+const TF_LETTERS = ['ص','خ'];
+// حروف الخيارات حسب نوع السؤال
+function qLetters(meta){ return meta.type==='tf' ? TF_LETTERS : LETTERS.slice(0, meta.opts); }
+const TYPE_NAMES = { mcq:'اختيار من متعدد', tf:'صواب / خطأ', match:'مزاوجة' };
+
+const state = {
+  cfg:{
+    title:'', sub:'', perCol:20,
+    sections:[ { type:'mcq', count:40, opts:4 } ],
+    numQ:40,
+    idEnabled:true, seatDigits:5, gradeDigits:2,
+    sheetType:'full'    // full | cards | qa
+  },
+  meta:[],           // مصفوفة مشتقّة: نوع وخيارات كل سؤال
+  key:[],            // مفتاح الإجابة: قيمة كل سؤال = رقم الخيار أو null
+  results:[],
+  cvReady:false,
+  corners:[],
+  imgLoaded:false,
+  threshPct:40,
+  lastGrade:null,
+};
+
+/* ============================================================
+   حساب التخطيط — المصدر الوحيد لإحداثيات النموذج
+   تستخدمه كلٌّ من رسم البطاقة وقراءتها، فتتطابق تماماً
+   ============================================================ */
+const CANVAS_W = 1000, CANVAS_H = 1414;
+// مراكز المربعات الركنية في النظام القياسي (TL, TR, BR, BL)
+const FIDUCIALS = [ {x:70,y:70}, {x:930,y:70}, {x:930,y:1344}, {x:70,y:1344} ];
+const FID_SIZE = 46;
+
+// أعمدة أرقام بدءاً من startX نحو اليسار
+function idColsFromX(startX, count, group, digitsTop, r, vGap, colGap){
+  const cols=[]; let x=startX;
+  for(let c=0;c<count;c++){
+    const b=[]; for(let d=0;d<10;d++) b.push({ d, cx:x, cy:digitsTop+d*vGap, r });
+    cols.push({ group, idx:c, cx:x, bubbles:b }); x -= colGap;
+  }
+  return { cols, nextX:x };
+}
+// رقم الجلوس (وربما الصف) في الأعلى
+function computeIdTop(topY, seatOnly, CW){
+  CW = CW || CANVAS_W;
+  const cfg=state.cfg;
+  if(!cfg.idEnabled) return { enabled:false, bottomY:topY, cols:[], mode:'top' };
+  const seatN=cfg.seatDigits, gradeN=seatOnly?0:cfg.gradeDigits;
+  const r=8, vGap=18, colGap=28, digitsTop=topY+34;
+  const sres=idColsFromX(CW-72-r, seatN, 'seat', digitsTop, r, vGap, colGap);
+  let cols=sres.cols, gradeRightX=null;
+  if(gradeN>0){ const gx=sres.nextX-colGap*1.3; gradeRightX=gx+r+6; cols=cols.concat(idColsFromX(gx,gradeN,'grade',digitsTop,r,vGap,colGap).cols); }
+  return { enabled:true, bottomY:digitsTop+9*vGap+r, cols, digitsTop, r, vGap, seatN, gradeN, mode:'top',
+           seatRightX:CW-72, gradeRightX, labelY:topY+16 };
+}
+// رقم الجلوس + الصف داخل صندوق بيانات الطالب الجانبي
+function computeIdBox(box){
+  const cfg=state.cfg;
+  if(!cfg.idEnabled) return { enabled:false, bottomY:box.y, cols:[], mode:'box' };
+  const seatN=cfg.seatDigits, gradeN=cfg.gradeDigits;
+  const r=8, vGap=26, colGap=27, digitsTop=box.y+196;
+  const sres=idColsFromX(box.right-22-r, seatN, 'seat', digitsTop, r, vGap, colGap);
+  let cols=sres.cols, gradeRightX=null;
+  if(gradeN>0){ const gx=sres.nextX-colGap*1.2; gradeRightX=gx+r+6; cols=cols.concat(idColsFromX(gx,gradeN,'grade',digitsTop,r,vGap,colGap).cols); }
+  return { enabled:true, bottomY:digitsTop+9*vGap+r, cols, digitsTop, r, vGap, seatN, gradeN, mode:'box',
+           seatRightX:box.right-22, gradeRightX, labelY:digitsTop-18 };
+}
+
+function computeLayout(){
+  const cfg = state.cfg, sections = cfg.sections, perCol = cfg.perCol, M = 60;
+  const isQA = cfg.sheetType === 'qa';
+  // النظام الإحداثي لبطاقة الإجابة: أفقي عريض لأسئلة+إجابة، طولي للبقية
+  const CW = 1000;
+  const CH = isQA ? 680 : 1414;
+  const inset = isQA ? 56 : 70;
+  const fidSize = isQA ? 38 : 46;
+  const fid = [ {x:inset,y:inset}, {x:CW-inset,y:inset}, {x:CW-inset,y:CH-inset}, {x:inset,y:CH-inset} ];
+
+  let qLeft, qRight, gridTop, box=null, idLayout;
+  if(isQA){
+    idLayout = computeIdTop(64, true, CW);              // رقم الجلوس فقط أعلى البطاقة
+    gridTop = (idLayout.enabled ? idLayout.bottomY : 120) + 18;
+    qLeft = M; qRight = CW - M;
+  } else {
+    const boxW=296, boxRight=CW-M, boxLeft=boxRight-boxW, boxTop=178, boxBottom=648;
+    box = { x:boxLeft, y:boxTop, w:boxW, h:boxBottom-boxTop, right:boxRight, bottom:boxBottom };
+    idLayout = computeIdBox(box);
+    gridTop = boxTop;
+    qLeft = M; qRight = boxLeft - 24;
+  }
+  const gridBottom = CH - (isQA ? 26 : 92);
+  const headerH = isQA ? 24 : 28, gapBetween = isQA ? 8 : 12;
+  const qWidth = qRight - qLeft;
+  const ORD = ['أولاً','ثانياً','ثالثاً','رابعاً','خامساً'];
+
+  const secMeta = sections.map((s)=>{
+    const cnt = Math.max(1, Math.min(120, s.count||1));
+    let cols, divisor;
+    if(isQA){ cols = Math.min(4, Math.max(1, Math.round(cnt/5))); divisor = Math.ceil(cnt/cols); }
+    else { divisor = perCol; cols = Math.max(1, Math.ceil(cnt/perCol)); }
+    const rowsTall = Math.min(divisor, cnt);
+    const opts = (s.type==='tf')?2 : (s.type==='match'? Math.max(2,Math.min(10,cnt)) : Math.max(2,Math.min(5,s.opts||4)));
+    return { s, cnt, cols, divisor, rowsTall, opts };
+  });
+  const totalRows = secMeta.reduce((a,b)=>a+b.rowsTall,0) || 1;
+  const availH = (gridBottom - gridTop) - sections.length*(headerH + gapBetween);
+  const rowH = Math.min(46, availH / totalRows);
+
+  let minGap = 46;
+  for(const sm of secMeta){
+    const colW = qWidth/sm.cols;
+    minGap = Math.min(minGap, Math.min(46,(colW-80)/Math.max(1,sm.opts-1)));
+  }
+  const r = Math.max(5, Math.min(13.5, rowH*0.30, minGap*0.42));
+
+  const questions = [], headers = [];
+  let y = gridTop, gi = 0;
+  for(let k=0;k<secMeta.length;k++){
+    const sm = secMeta[k];
+    headers.push({ title:`${ORD[k]||''}: ${TYPE_NAMES[sm.s.type]}`, y:y+headerH-10, lineY:y+headerH-1, rx:qRight, lineLeft:qLeft });
+    const top = y + headerH;
+    const colW = qWidth/sm.cols;
+    const gap = Math.min(46,(colW-80)/Math.max(1,sm.opts-1));
+    for(let qi=0; qi<sm.cnt; qi++){
+      const col = Math.floor(qi/sm.divisor), row = qi%sm.divisor;
+      const colRightX = qRight - col*colW;
+      const cy = top + rowH*(row+0.5);
+      const numX = colRightX - 22;
+      const firstBubbleX = colRightX - 58;
+      const choices = [];
+      for(let c=0;c<sm.opts;c++) choices.push({ cx:firstBubbleX - c*gap, cy, r });
+      questions.push({ q:gi, local:qi+1, numX, cy, choices, type:sm.s.type });
+      gi++;
+    }
+    y = top + sm.rowsTall*rowH + gapBetween;
+  }
+  return { rowH, r, questions, headers, idLayout, gridTop, gridBottom, box, isQA, qLeft, qRight,
+           W:CW, H:CH, fid, fidSize };
+}
+
+/* ============================================================
+   قراءة الإعدادات وبناء النموذج
+   ============================================================ */
+function readCfg(){
+  state.cfg.title  = document.getElementById('cfgTitle').value;
+  state.cfg.sub    = document.getElementById('cfgSub').value;
+  state.cfg.perCol = Math.max(5, Math.min(40, +document.getElementById('cfgPerCol').value||20));
+  state.cfg.idEnabled = document.getElementById('cfgIdEnabled').checked;
+  state.cfg.seatDigits = Math.max(1, Math.min(8, +document.getElementById('cfgSeatDigits').value||5));
+  state.cfg.gradeDigits = Math.max(1, Math.min(3, +document.getElementById('cfgGradeDigits').value||2));
+  state.cfg.sheetType = document.getElementById('cfgSheetType').value;
+  sanitizeSections();
+  buildMeta();
+  // إعادة ضبط طول المفتاح مع الحفاظ على ما أمكن
+  if(state.key.length !== state.cfg.numQ){
+    const old = state.key.slice();
+    state.key = new Array(state.cfg.numQ).fill(null);
+    for(let i=0;i<Math.min(old.length,state.cfg.numQ);i++) state.key[i]=old[i];
+  }
+  // إلغاء أي قيمة مفتاح تجاوزت خيارات السؤال بعد تغيير نوعه
+  for(let i=0;i<state.cfg.numQ;i++){
+    if(state.key[i]!==null && state.key[i] >= state.meta[i].opts) state.key[i]=null;
+  }
+}
+
+// قيود شكل «أسئلة + إجابة»: لا مزاوجة، وبحد أقصى 20 سؤالاً
+function sanitizeSections(){
+  const cfg = state.cfg;
+  if(cfg.sheetType !== 'qa') return;
+  const seen = new Set(), out = [];
+  for(const s of cfg.sections){
+    const t = (s.type==='match') ? 'mcq' : s.type;   // المزاوجة غير مسموحة هنا
+    if(seen.has(t)) continue;                         // لا يتكرر النوع
+    seen.add(t); out.push({ ...s, type:t });
+  }
+  if(out.length===0) out.push({ type:'mcq', count:10, opts:4 });
+  let total = 0;
+  for(const s of out){
+    s.count = Math.max(1, Math.min(s.count, 20 - total));
+    total += s.count;
+  }
+  cfg.sections = out.filter(s=>s.count>0);
+  if(cfg.sections.length===0) cfg.sections.push({ type:'mcq', count:10, opts:4 });
+}
+
+// اشتقاق نوع وخيارات كل سؤال من الأقسام
+function buildMeta(){
+  const meta = [];
+  const sections = state.cfg.sections;
+  for(let si=0; si<sections.length; si++){
+    const s = sections[si];
+    const count = Math.max(1, Math.min(120, s.count||1));
+    let opts;
+    if(s.type==='tf') opts = 2;
+    else if(s.type==='match') opts = Math.max(2, Math.min(10, count)); // المزاوجة: الخيارات = عدد الأسئلة
+    else opts = Math.max(2, Math.min(5, s.opts||4));                    // اختياري: حتى 5
+    for(let i=0;i<count && meta.length<120;i++) meta.push({ type:s.type, opts, sec:si, local:i });
+  }
+  state.meta = meta;
+  state.cfg.numQ = meta.length;
+}
+
+/* محرّر الأقسام */
+const ALL_TYPES = ['mcq','tf','match'];
+function usedTypes(except){ return state.cfg.sections.filter((_,i)=>i!==except).map(s=>s.type); }
+
+function renderSections(){
+  const host = document.getElementById('sectionsHost');
+  const isQA = state.cfg.sheetType === 'qa';
+  const allowed = isQA ? ['mcq','tf'] : ALL_TYPES;
+  host.innerHTML =
+  `<div class="secrow" style="margin-bottom:2px"><span class="lab" style="flex:1.4">النوع</span><span class="lab" style="flex:1">عدد الأسئلة</span><span class="lab" style="flex:1">عدد الخيارات</span><span style="flex:0 0 38px"></span></div>` +
+  state.cfg.sections.map((s,i)=>{
+    const taken = usedTypes(i);
+    const dis = (v)=> (taken.includes(v) || (isQA && v==='match')) ? 'disabled' : '';
+    const opt = (v,t)=>`<option value="${v}" ${s.type===v?'selected':''} ${dis(v)}>${t}</option>`;
+    let optsCell;
+    if(s.type==='tf') optsCell = `<input value="ص / خ" disabled style="opacity:.5;flex:1">`;
+    else if(s.type==='match') optsCell = `<input value="= ${s.count}" disabled title="خيارات المزاوجة تساوي عدد أسئلتها" style="opacity:.6;flex:1">`;
+    else optsCell = `<select style="flex:1" onchange="updateSection(${i},'opts',this.value)">
+        ${[2,3,4,5].map(n=>`<option value="${n}" ${(+s.opts||4)===n?'selected':''}>${n}</option>`).join('')}
+      </select>`;
+    return `<div class="secrow">
+      <select onchange="updateSection(${i},'type',this.value)">
+        ${opt('mcq','اختيار من متعدد')}${opt('tf','صواب / خطأ')}${opt('match','مزاوجة')}
+      </select>
+      <input type="number" min="1" max="120" value="${s.count}" onchange="updateSection(${i},'count',this.value)">
+      ${optsCell}
+      <button class="del" onclick="removeSection(${i})" title="حذف القسم">×</button>
+    </div>`;
+  }).join('');
+  // إخفاء زر الإضافة إذا اكتملت الأنواع المتاحة
+  const addBtn = document.getElementById('addSectionBtn');
+  if(addBtn) addBtn.style.display = state.cfg.sections.length >= allowed.length ? 'none' : 'block';
+}
+function addSection(){
+  const isQA = state.cfg.sheetType === 'qa';
+  const pool = isQA ? ['mcq','tf'] : ALL_TYPES;
+  const taken = state.cfg.sections.map(s=>s.type);
+  const free = pool.find(t=>!taken.includes(t));
+  if(!free){ alert('الأنواع المتاحة مضافة بالفعل — لا يتكرر النوع.'); return; }
+  const def = free==='match' ? {type:'match',count:5} : (free==='tf'? {type:'tf',count:10} : {type:'mcq',count:10,opts:4});
+  state.cfg.sections.push(def); renderSections();
+}
+function removeSection(i){
+  if(state.cfg.sections.length<=1){ alert('يجب أن يبقى قسم واحد على الأقل.'); return; }
+  state.cfg.sections.splice(i,1); renderSections();
+}
+function updateSection(i,field,val){
+  const s = state.cfg.sections[i];
+  if(field==='type'){
+    if(state.cfg.sheetType==='qa' && val==='match'){ alert('المزاوجة غير متاحة في شكل «أسئلة + إجابة».'); renderSections(); return; }
+    if(usedTypes(i).includes(val)){ alert('هذا النوع مضاف في قسم آخر — لا يتكرر النوع.'); renderSections(); return; }
+    s.type = val;
+    if(val==='mcq' && !s.opts) s.opts = 4;
+  } else {
+    s[field] = +val;
+  }
+  renderSections();
+}
+
+// يبني محتوى ورقة واحدة (إحداثيات 1000×1414) — يُعاد استخدامه لكل الأشكال
+function buildContentSVG(L){
+  const c = state.cfg;
+  const W=L.W, H=L.H, fid=L.fid, fs=L.fidSize;
+  let svg = '';
+  svg += `<rect x="0" y="0" width="${W}" height="${H}" fill="#fff"/>`;
+  svg += `<rect x="${fs*0.85}" y="${fs*0.85}" width="${W-fs*1.7}" height="${H-fs*1.7}" fill="none" stroke="#cfd9d7" stroke-width="2"/>`;
+  for(const f of fid){
+    svg += `<rect x="${f.x-fs/2}" y="${f.y-fs/2}" width="${fs}" height="${fs}" fill="#000"/>`;
+  }
+  const id = L.idLayout;
+
+  if(L.isQA){
+    svg += `<text x="${W/2}" y="44" text-anchor="middle" font-size="20" font-weight="bold" fill="#0b5a54">${escapeXml(c.title)}</text>`;
+    if(id.enabled){
+      svg += rlabel('رقم الجلوس', id.seatRightX, id.labelY, 13);
+      const firstSeatX = id.cols[0] ? id.cols[0].cx : W-72;
+      for(let d=0; d<10; d++) svg += `<text x="${firstSeatX + id.r + 12}" y="${id.digitsTop + d*id.vGap + 4}" text-anchor="middle" font-size="11" fill="#9aa7ab">${d}</text>`;
+      svg += idBubblesSVG(id);
+    }
+    svg += `<text x="${L.qLeft+10}" y="${L.gridTop-10}" text-anchor="start" font-size="12" font-weight="bold" fill="#5b6f76">ظلّل دائرة واحدة فقط لكل سؤال</text>`;
+  } else {
+    svg += `<text x="${(L.qLeft+L.qRight)/2}" y="118" text-anchor="middle" font-size="22" font-weight="bold" fill="#0b5a54">${escapeXml(c.title)}</text>`;
+    svg += `<text x="${(L.qLeft+L.qRight)/2}" y="146" text-anchor="middle" font-size="13" fill="#5b6f76">${escapeXml(c.sub)}</text>`;
+    const b = L.box;
+    svg += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#fcfdfd" stroke="#cfd9d7" stroke-width="1.6" rx="10"/>`;
+    svg += `<text x="${b.right-14}" y="${b.y+30}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#0b5a54">بيانات الطالب</text>`;
+    const lx = b.x+14, rx = b.right-14;
+    const nameLine = (lbl,yy)=>{ const w = measureTextW(lbl,13); return rlabel(lbl, rx, yy, 13) + dotted(lx, rx - w - 8, yy+4); };
+    svg += nameLine('الاسم:', b.y+64);
+    svg += nameLine('المدرسة:', b.y+98);
+    svg += nameLine('الصف / الفصل:', b.y+132);
+    if(id.enabled){
+      svg += rlabel('رقم الجلوس', id.seatRightX, id.labelY, 12);
+      if(id.gradeN>0) svg += rlabel('الصف', id.gradeRightX, id.labelY, 12);
+      const firstSeatX = id.cols[0] ? id.cols[0].cx : rx;
+      for(let d=0; d<10; d++) svg += `<text x="${firstSeatX + id.r + 11}" y="${id.digitsTop + d*id.vGap + 4}" text-anchor="middle" font-size="10" fill="#9aa7ab">${d}</text>`;
+      svg += idBubblesSVG(id);
+    }
+    svg += `<text x="${L.qRight}" y="168" direction="rtl" text-anchor="start" font-size="12" font-weight="bold" fill="#5b6f76">ظلّل دائرة واحدة فقط لكل سؤال</text>`;
+  }
+
+  // رؤوس الأقسام + الأسئلة (بترقيم محلي)
+  for(const h of L.headers){
+    svg += `<text x="${h.rx}" y="${h.y}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#0b5a54">${escapeXml(h.title)}</text>`;
+    svg += `<line x1="${h.lineLeft}" y1="${h.lineY}" x2="${h.rx}" y2="${h.lineY}" stroke="#cfd9d7" stroke-width="1"/>`;
+  }
+  for(const q of L.questions){
+    const letters = qLetters(state.meta[q.q]);
+    svg += `<text x="${q.numX}" y="${q.cy+5}" text-anchor="end" font-size="13" font-weight="bold" fill="#15242b">${q.local}</text>`;
+    for(let ci=0; ci<q.choices.length; ci++){
+      const bb = q.choices[ci];
+      svg += `<circle cx="${bb.cx}" cy="${bb.cy}" r="${bb.r}" fill="#fff" stroke="#aab4b6" stroke-width="1.4"/>`;
+      svg += `<text x="${bb.cx}" y="${bb.cy+4.5}" text-anchor="middle" font-size="${Math.min(bb.r,12)}" fill="#b4bec0">${letters[ci]}</text>`;
+    }
+  }
+  return svg;
+}
+function idBubblesSVG(id){
+  let s='';
+  for(const col of id.cols){
+    for(const bub of col.bubbles){
+      s += `<circle cx="${bub.cx}" cy="${bub.cy}" r="${bub.r}" fill="#fff" stroke="#aab4b6" stroke-width="1.2"/>`;
+      s += `<text x="${bub.cx}" y="${bub.cy+3.5}" text-anchor="middle" font-size="9" fill="#c2cccd">${bub.d}</text>`;
+    }
+  }
+  return s;
+}
+
+function onSheetTypeChange(){
+  state.cfg.sheetType = document.getElementById('cfgSheetType').value;
+  sanitizeSections();
+  renderSections();
+  renderSheet();
+}
+
+function renderSheet(){
+  readCfg();
+  const L = computeLayout();
+  const content = buildContentSVG(L);
+  const type = state.cfg.sheetType;
+  const open = `<svg viewBox="0 0 ${CANVAS_W} ${CANVAS_H}" xmlns="http://www.w3.org/2000/svg" font-family="Tahoma, Arial, sans-serif">`;
+  let svg;
+
+  if(type === 'cards'){
+    // ٤ بطاقات (٢×٢) في صفحة A4، كل بطاقة ورقة مستقلة بأركانها — تُقصّ وتُمسح منفردة
+    const gap = 22;
+    const s = ((CANVAS_W - 3*gap)/2) / CANVAS_W;
+    const cardW = CANVAS_W*s, cardH = CANVAS_H*s;
+    const pos = [[gap,gap],[gap*2+cardW,gap],[gap,gap*2+cardH],[gap*2+cardW,gap*2+cardH]];
+    svg = open + `<rect x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" fill="#fff"/>`;
+    for(const [tx,ty] of pos){
+      svg += `<g transform="translate(${tx},${ty}) scale(${s})">${content}</g>`;
+    }
+    // خطوط القص (في منتصف الفراغات)
+    const cutY = gap + cardH + gap/2;
+    svg += `<line x1="${CANVAS_W/2}" y1="6" x2="${CANVAS_W/2}" y2="${CANVAS_H-6}" stroke="#c2cccd" stroke-width="1.4" stroke-dasharray="6 6"/>`;
+    svg += `<line x1="6" y1="${cutY}" x2="${CANVAS_W-6}" y2="${cutY}" stroke="#c2cccd" stroke-width="1.4" stroke-dasharray="6 6"/>`;
+    svg += `<text x="${CANVAS_W/2}" y="${cutY-6}" text-anchor="middle" font-size="11" fill="#9aa7ab">— تُقصّ على الخطوط —</text>`;
+    svg += `</svg>`;
+  } else if(type === 'qa'){
+    // تقسيم عرضي: الأسئلة (أعلى) + بطاقة الإجابة الأفقية (أسفل) بأركانها حولها
+    const s = 0.9;
+    const aw = L.W*s, ah = L.H*s;
+    const tx = (CANVAS_W - aw)/2, ty = CANVAS_H - ah - 36;   // أسفل الصفحة
+    svg = open + `<rect x="0" y="0" width="${CANVAS_W}" height="${CANVAS_H}" fill="#fff"/>`;
+    // منطقة الأسئلة (أعلى)
+    const qx=44, qy=60, qw=CANVAS_W-88, qh=ty-qy-20;
+    svg += `<rect x="${qx}" y="${qy}" width="${qw}" height="${qh}" fill="none" stroke="#cfd9d7" stroke-width="1.5" rx="10"/>`;
+    svg += `<text x="${qx+qw-16}" y="${qy+34}" direction="rtl" text-anchor="start" font-size="18" font-weight="bold" fill="#0b5a54">الأسئلة</text>`;
+    for(let yy=qy+58; yy<qy+qh-16; yy+=42){
+      svg += `<line x1="${qx+20}" y1="${yy}" x2="${qx+qw-20}" y2="${yy}" stroke="#e3eae9" stroke-width="1.2"/>`;
+    }
+    // بطاقة الإجابة (أسفل) — أفقية مستقلة بأركانها
+    svg += `<g transform="translate(${tx},${ty}) scale(${s})">${content}</g>`;
+    svg += `</svg>`;
+  } else {
+    svg = open + content + `</svg>`;
+  }
+
+  document.getElementById('sheetHost').innerHTML = svg;
+  const tip = document.getElementById('gradeTip');
+  if(tip){
+    if(type==='cards') tip.textContent = 'الشكل الحالي: بطاقات. اقصص الورقة على الخطوط المتقطّعة إلى ٤ بطاقات، ثم امسح كل بطاقة على حدة (كل بطاقة لها أركانها الأربعة).';
+    else if(type==='qa') tip.textContent = 'الشكل الحالي: أسئلة + إجابة. عند المسح وجّه الكاميرا نحو بطاقة الإجابة (أسفل الورقة) بحيث تملأ الإطار وتظهر أركانها الأربعة.';
+    else tip.textContent = 'الشكل الحالي: ورقة كاملة. امسح الورقة كاملةً مع ظهور المربعات الأربعة.';
+  }
+  buildKeyGrid();
+}
+
+// قياس عرض النص فعلياً (مستقل عن تفسير المحرّك لاتجاه RTL)
+let _measCtx;
+function measureTextW(text, size, weight){
+  if(!_measCtx) _measCtx = document.createElement('canvas').getContext('2d');
+  _measCtx.font = `${weight||'bold'} ${size||16}px Tahoma, Arial, sans-serif`;
+  return _measCtx.measureText(text).width;
+}
+// نص عربي حافته اليمنى عند rx (يُحسب الموضع بالقياس، فلا ينقطع أبداً)
+function rlabel(text, rx, y, size, weight){
+  size = size || 16; weight = weight || 'bold';
+  const x = rx - measureTextW(text, size, weight);
+  return `<text x="${x}" y="${y}" text-anchor="start" font-size="${size}" font-weight="${weight}" fill="#15242b">${escapeXml(text)}</text>`;
+}
+function dotted(x1,x2,y){ return `<line x1="${x1}" y1="${y}" x2="${x2}" y2="${y}" stroke="#9aa7ab" stroke-width="1.4" stroke-dasharray="2 4"/>`; }
+function escapeXml(s){ return (s||'').replace(/[<>&'"]/g,ch=>({'<':'&lt;','>':'&gt;','&':'&amp;',"'":'&apos;','"':'&quot;'}[ch])); }
+
+/* ============================================================
+   مفتاح الإجابة
+   ============================================================ */
+function buildKeyGrid(){
+  const host = document.getElementById('keyGrid');
+  const ORD = ['أولاً','ثانياً','ثالثاً','رابعاً','خامساً'];
+  let html = '';
+  let secShown = -1, local = 0;
+  for(let q=0; q<state.cfg.numQ; q++){
+    const meta = state.meta[q];
+    if(meta.sec !== secShown){
+      secShown = meta.sec; local = 0;
+      html += `<div style="grid-column:1/-1;margin:6px 2px 2px;font-weight:700;color:var(--teal-d);font-size:13px;border-bottom:1px solid var(--line);padding-bottom:4px">${ORD[secShown]||''}: ${TYPE_NAMES[meta.type]}</div>`;
+    }
+    local++;
+    const letters = qLetters(meta);
+    html += `<div class="keyq"><div class="qn">سؤال ${local}</div><div class="choices">`;
+    for(let ci=0; ci<letters.length; ci++){
+      const sel = state.key[q]===ci ? 'sel' : '';
+      html += `<button class="${sel}" onclick="setKey(${q},${ci})">${letters[ci]}</button>`;
+    }
+    html += `</div></div>`;
+  }
+  host.innerHTML = html;
+}
+function setKey(q,ci){ state.key[q] = (state.key[q]===ci? null : ci); buildKeyGrid(); }
+function clearKey(){ state.key = new Array(state.cfg.numQ).fill(null); buildKeyGrid(); }
+function autoFillKeyDemo(){
+  for(let q=0;q<state.cfg.numQ;q++) state.key[q] = q % state.meta[q].opts;
+  buildKeyGrid();
+}
+
+/* ============================================================
+   تحميل OpenCV
+   ============================================================ */
+function onCvReady(){
+  // قد يجهز الكائن cv قبل أن تكتمل نواة WASM — ننتظر cv.Mat
+  if(window.cv){
+    if(cv.Mat){ markCvReady(); }
+    else { cv['onRuntimeInitialized'] = markCvReady; }
+  }
+}
+function markCvReady(){
+  state.cvReady = true;
+  const el = document.getElementById('opencvStatus');
+  el.className='status ok'; el.textContent='✅ محرّك المعالجة جاهز.';
+}
+function onCvError(){
+  const el = document.getElementById('opencvStatus');
+  el.className='status err';
+  el.innerHTML='تعذّر تحميل محرّك المعالجة. تأكد من اتصالك بالإنترنت ثم أعد تحميل الصفحة. (المحرّك حجمه ~٨ م.ب فقد يأخذ بضع ثوانٍ أول مرة).';
+}
+// شبكة أمان: لو لم يصل onload لأي سبب، نفحص الجاهزية كل ثانية
+let _cvPoll = setInterval(()=>{
+  if(state.cvReady){ clearInterval(_cvPoll); return; }
+  if(window.cv && cv.Mat){ clearInterval(_cvPoll); markCvReady(); }
+}, 1000);
+setTimeout(()=>clearInterval(_cvPoll), 60000);
+
+/* ============================================================
+   تحميل الصورة + اختيار الأركان
+   ============================================================ */
+let displayCanvas, displayCtx, imgNaturalW, imgNaturalH, dispScale;
+function loadImage(ev){
+  const file = ev.target.files && ev.target.files[0];
+  if(!file) return;
+  stopLiveScan();
+  const img = new Image();
+  img.onload = ()=>{
+    document.getElementById('gradeArea').style.display='block';
+    displayCanvas = document.getElementById('imgCanvas');
+    // نحدّ العرض لتسهيل النقر، ونقرأ من نفس اللوحة فتتطابق الإحداثيات
+    const maxW = 1000;
+    dispScale = Math.min(1, maxW / img.naturalWidth);
+    displayCanvas.width = Math.round(img.naturalWidth*dispScale);
+    displayCanvas.height = Math.round(img.naturalHeight*dispScale);
+    displayCtx = displayCanvas.getContext('2d');
+    displayCtx.drawImage(img,0,0,displayCanvas.width,displayCanvas.height);
+    state.imgLoaded = true;
+    resetCorners();
+  };
+  img.src = URL.createObjectURL(file);
+}
+
+const canvasWrap = ()=>document.getElementById('canvasWrap');
+function canvasPointFromEvent(e){
+  const rect = displayCanvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left) * (displayCanvas.width / rect.width);
+  const y = (e.clientY - rect.top)  * (displayCanvas.height / rect.height);
+  return {x,y};
+}
+function onCanvasTap(e){
+  if(!state.imgLoaded || state.corners.length>=4) return;
+  const p = canvasPointFromEvent(e);
+  state.corners.push(p);
+  drawDots();
+  if(state.corners.length===4){
+    const cs=document.getElementById('cornerStatus');
+    cs.className='status ok'; cs.textContent='✅ تم تحديد الأركان الأربعة. اضغط «صحّح البطاقة».';
+  }
+}
+function drawDots(){
+  const layer = document.getElementById('dotLayer');
+  layer.innerHTML='';
+  const rect = displayCanvas.getBoundingClientRect();
+  const labels=['1','2','3','4'];
+  state.corners.forEach((p,i)=>{
+    const d=document.createElement('div');
+    d.className='corner-dot';
+    d.style.left = (p.x / displayCanvas.width * 100) + '%';
+    d.style.top  = (p.y / displayCanvas.height * 100) + '%';
+    d.textContent = labels[i];
+    layer.appendChild(d);
+  });
+}
+function resetCorners(){
+  state.corners=[];
+  document.getElementById('dotLayer').innerHTML='';
+  const cs=document.getElementById('cornerStatus');
+  cs.className='status info';
+  cs.textContent='انقر على المربعات السوداء الأربعة بالترتيب: ١) أعلى-يمين  ٢) أعلى-يسار  ٣) أسفل-يسار  ٤) أسفل-يمين — أو استخدم الكشف التلقائي.';
+}
+
+/* الكشف التلقائي عن المربعات الركنية */
+function tryAutoDetect(){
+  if(!state.cvReady){ alert('محرّك المعالجة غير جاهز بعد.'); return; }
+  if(!state.imgLoaded) return;
+  let src = cv.imread(displayCanvas);
+  let gray=new cv.Mat(), blur=new cv.Mat(), bin=new cv.Mat();
+  cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
+  cv.GaussianBlur(gray,blur,new cv.Size(5,5),0);
+  cv.threshold(blur,bin,0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU);
+  let contours=new cv.MatVector(), hierarchy=new cv.Mat();
+  cv.findContours(bin,contours,hierarchy,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE);
+  const W=displayCanvas.width, H=displayCanvas.height, imgArea=W*H;
+  const minA=imgArea*0.0004, maxA=imgArea*0.03;
+  const cand=[];
+  for(let i=0;i<contours.size();i++){
+    const cnt=contours.get(i);
+    const area=cv.contourArea(cnt);
+    if(area>minA && area<maxA){
+      const peri=cv.arcLength(cnt,true);
+      const approx=new cv.Mat();
+      cv.approxPolyDP(cnt,approx,0.05*peri,true);
+      if(approx.rows===4 && cv.isContourConvex(approx)){
+        const rect=cv.boundingRect(approx);
+        const ar=rect.width/rect.height;
+        if(ar>0.65 && ar<1.5){
+          cand.push({x:rect.x+rect.width/2, y:rect.y+rect.height/2, area});
+        }
+      }
+      approx.delete();
+    }
+    cnt.delete();
+  }
+  src.delete();gray.delete();blur.delete();bin.delete();contours.delete();hierarchy.delete();
+  // أقرب مرشح لكل ركن
+  const corners=[{x:0,y:0},{x:W,y:0},{x:W,y:H},{x:0,y:H}];
+  const picked=[];
+  let ok=true;
+  for(const cor of corners){
+    let best=null,bd=Infinity;
+    for(const cn of cand){
+      const d=Math.hypot(cn.x-cor.x,cn.y-cor.y);
+      if(d<bd){bd=d;best=cn;}
+    }
+    if(!best || bd>Math.hypot(W,H)*0.35){ ok=false; break; }
+    picked.push({x:best.x,y:best.y});
+  }
+  const cs=document.getElementById('cornerStatus');
+  if(ok && picked.length===4){
+    state.corners=picked; drawDots();
+    cs.className='status ok'; cs.textContent='✅ تم كشف الأركان تلقائياً. راجعها ثم اضغط «صحّح البطاقة». إن كانت خاطئة، أعد التحديد يدوياً.';
+  }else{
+    cs.className='status warn';
+    cs.textContent='⚠️ تعذّر الكشف التلقائي بدقة. رجاءً انقر الأركان الأربعة يدوياً (المربعات السوداء).';
+  }
+}
+
+function onThreshChange(){
+  state.threshPct = +document.getElementById('threshSlider').value;
+  document.getElementById('threshVal').textContent = state.threshPct+'%';
+}
+
+/* ============================================================
+   التصحيح
+   ============================================================ */
+// نواة التصحيح المشتركة: تأخذ مصفوفة مصدر + أركاناً، وتُعيد النتيجة (ومعها طبقة عرض اختيارية)
+function gradeCore(srcMat, corners, drawVis){
+  const L = computeLayout();
+  const sp = corners;
+  const srcTri = cv.matFromArray(4,1,cv.CV_32FC2,[sp[0].x,sp[0].y, sp[1].x,sp[1].y, sp[2].x,sp[2].y, sp[3].x,sp[3].y]);
+  const dstTri = cv.matFromArray(4,1,cv.CV_32FC2,[
+    L.fid[0].x,L.fid[0].y, L.fid[1].x,L.fid[1].y, L.fid[2].x,L.fid[2].y, L.fid[3].x,L.fid[3].y ]);
+  const Mt = cv.getPerspectiveTransform(srcTri,dstTri);
+  let warp=new cv.Mat();
+  cv.warpPerspective(srcMat,warp,Mt,new cv.Size(L.W,L.H),cv.INTER_LINEAR,cv.BORDER_CONSTANT,new cv.Scalar(255,255,255,255));
+  let gray=new cv.Mat(), bin=new cv.Mat();
+  cv.cvtColor(warp,gray,cv.COLOR_RGBA2GRAY);
+  cv.threshold(gray,bin,0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU);
+  let opened=new cv.Mat();
+  let kernel=cv.getStructuringElement(cv.MORPH_ELLIPSE,new cv.Size(5,5));
+  cv.morphologyEx(bin,opened,cv.MORPH_OPEN,kernel);
+  let ii=new cv.Mat();
+  cv.integral(opened,ii,cv.CV_64F);
+
+  const S = (L.questions[0].choices.length>1)
+      ? Math.abs(L.questions[0].choices[1].cx - L.questions[0].choices[0].cx) : 40;
+  const searchX = Math.round(S*0.30);
+  const searchY = Math.round(L.rowH*0.38);
+  const absThresh = state.threshPct/100;
+
+  const answers=[]; let correct=0,wrong=0,blank=0,multiple=0;
+  let vis = drawVis ? warp.clone() : null;
+
+  for(const q of L.questions){
+    const fills = q.choices.map(b=>refinedFill(ii, L.W, L.H, b, searchX, searchY));
+    const order = fills.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
+    const maxFill = order[0].v, secondFill = order.length>1?order[1].v:0;
+    let picked=-1, isMultiple=false;
+    if(maxFill < absThresh){ picked=-1; }
+    else if(secondFill >= absThresh && (maxFill - secondFill) < 0.15){ isMultiple=true; }
+    else { picked = order[0].i; }
+    const keyAns = state.key[q.q];
+    let verdict;
+    if(isMultiple){ verdict='multiple'; multiple++; wrong++; }
+    else if(picked===-1){ verdict='blank'; blank++; }
+    else if(keyAns!==null && picked===keyAns){ verdict='correct'; correct++; }
+    else { verdict='wrong'; wrong++; }
+    answers.push({q:q.q, picked, key:keyAns, verdict});
+
+    if(vis){
+      q.choices.forEach((b,ci)=>{
+        let color=null;
+        if(ci===picked) color = (verdict==='correct')?[31,157,85,255]:[214,69,69,255];
+        if(keyAns!==null && ci===keyAns && verdict!=='correct') color=[16,118,110,255];
+        if(color){ cv.circle(vis,new cv.Point(b.cx,b.cy),Math.round(b.r+3),new cv.Scalar(...color),3); }
+      });
+    }
+  }
+  // قراءة حقول الأرقام (رقم الجلوس + الصف)
+  let seat='', grade='';
+  if(L.idLayout.enabled){
+    const readCol = (col)=>{
+      const fills = col.bubbles.map(b=>refinedFill(ii, L.W, L.H, b, Math.round(col.bubbles[0].r*0.7), Math.round(col.bubbles[0].r*0.7)));
+      const order = fills.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
+      if(order[0].v < absThresh) return '';                       // خانة فارغة
+      if(order.length>1 && order[1].v >= absThresh && (order[0].v-order[1].v)<0.15) return '?';
+      return String(order[0].i);
+    };
+    for(const col of L.idLayout.cols){
+      const d = readCol(col);
+      if(col.group==='seat') seat += d; else grade += d;
+      if(vis){
+        col.bubbles.forEach((b,di)=>{ if(String(di)===d) cv.circle(vis,new cv.Point(b.cx,b.cy),Math.round(b.r+2),new cv.Scalar(16,118,110,255),2); });
+      }
+    }
+  }
+
+  srcTri.delete();dstTri.delete();Mt.delete();warp.delete();gray.delete();bin.delete();
+  opened.delete();kernel.delete();ii.delete();
+  return { result:{ correct, wrong, blank, multiple, total: state.cfg.numQ, answers, seat, grade }, vis };
+}
+
+// التصحيح اليدوي (صورة ملتقطة + أركان منقورة)
+function gradeSheet(){
+  if(!state.cvReady){ alert('محرّك المعالجة غير جاهز. ارفع البرنامج على موقعك ثم جرّب.'); return; }
+  if(state.corners.length!==4){ alert('حدّد الأركان الأربعة أولاً.'); return; }
+  if(state.key.every(k=>k===null)){ if(!confirm('لم تُدخل مفتاح إجابة. المتابعة ستحسب الكل خطأً. هل تريد المتابعة؟')) return; }
+
+  let src = cv.imread(displayCanvas);
+  const { result, vis } = gradeCore(src, state.corners, true);
+  cv.imshow(displayCanvas, vis);
+  src.delete(); vis.delete();
+
+  state.lastGrade = result;
+  document.getElementById('lastResult').style.display='block';
+  const rs=document.getElementById('rScore');
+  rs.textContent = `${result.correct} / ${result.total}`;
+  const pct = result.total? result.correct/result.total : 0;
+  rs.className = pct>=0.5 ? 'score-good' : (pct>=0.3?'score-mid':'score-bad');
+  document.getElementById('rCorrect').textContent=result.correct;
+  document.getElementById('rWrong').textContent=result.wrong;
+  document.getElementById('rBlank').textContent=result.blank;
+  document.getElementById('rName').value = result.seat ? `رقم الجلوس ${result.seat}${result.grade?` · صف ${result.grade}`:''}` : '';
+
+  const cs=document.getElementById('cornerStatus');
+  cs.className='status ok';
+  cs.textContent = `تم. الأخضر = اختيار صحيح، الأحمر = خطأ، الفيروزي = الإجابة الصحيحة.` + (result.multiple? ` (${result.multiple} سؤال بتظليل مزدوج)`:'');
+}
+
+// مجموع قيم نافذة باستخدام الصورة التكاملية (سريع جداً)
+function winSum(ii,x,y,w,h){
+  return ii.doublePtr(y+h)[x+w] - ii.doublePtr(y)[x+w] - ii.doublePtr(y+h)[x] + ii.doublePtr(y)[x];
+}
+// أعلى نسبة تظليل في محيط الدائرة — يمتص الميلان والانحراف البسيط
+function refinedFill(ii, W, H, b, sx, sy){
+  const half = Math.max(6, Math.round(b.r*0.95));
+  const ws = half*2;
+  const area = ws*ws*255;
+  let best = 0;
+  for(let dy=-sy; dy<=sy; dy+=4){
+    for(let dx=-sx; dx<=sx; dx+=4){
+      const x = Math.round(b.cx+dx-half), y = Math.round(b.cy+dy-half);
+      if(x<0||y<0||x+ws>W||y+ws>H) continue;
+      const s = winSum(ii,x,y,ws,ws)/area;
+      if(s>best) best = s;
+    }
+  }
+  return best;
+}
+
+/* ============================================================
+   كشف الأركان (قابل لإعادة الاستخدام) — يُعيد 4 نقاط مرتّبة أو null
+   ============================================================ */
+function detectFiducials(srcMat){
+  const fw=srcMat.cols, fh=srcMat.rows;
+  const scale = Math.min(1, 640/fw);           // تصغير للسرعة
+  let small=new cv.Mat();
+  cv.resize(srcMat, small, new cv.Size(Math.round(fw*scale), Math.round(fh*scale)));
+  let gray=new cv.Mat(), blur=new cv.Mat(), bin=new cv.Mat();
+  cv.cvtColor(small,gray,cv.COLOR_RGBA2GRAY);
+  cv.GaussianBlur(gray,blur,new cv.Size(5,5),0);
+  cv.threshold(blur,bin,0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU);
+  let contours=new cv.MatVector(), hier=new cv.Mat();
+  cv.findContours(bin,contours,hier,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE);
+  const W=small.cols, H=small.rows, imgArea=W*H, minA=imgArea*0.0004, maxA=imgArea*0.04;
+  const cand=[];
+  for(let i=0;i<contours.size();i++){
+    const cnt=contours.get(i);
+    const area=cv.contourArea(cnt);
+    if(area>minA && area<maxA){
+      const peri=cv.arcLength(cnt,true);
+      const approx=new cv.Mat();
+      cv.approxPolyDP(cnt,approx,0.05*peri,true);
+      if(approx.rows===4 && cv.isContourConvex(approx)){
+        const rect=cv.boundingRect(approx);
+        const ar=rect.width/rect.height;
+        if(ar>0.6 && ar<1.6){
+          // كثافة سوداء عالية (مربع مصمت)
+          const fillR = area/(rect.width*rect.height);
+          if(fillR>0.7) cand.push({x:rect.x+rect.width/2, y:rect.y+rect.height/2});
+        }
+      }
+      approx.delete();
+    }
+    cnt.delete();
+  }
+  small.delete();gray.delete();blur.delete();bin.delete();contours.delete();hier.delete();
+
+  // أقرب مرشّح مميّز لكل ركن (TL,TR,BR,BL)
+  const targets=[{x:0,y:0},{x:W,y:0},{x:W,y:H},{x:0,y:H}];
+  const used=new Array(cand.length).fill(false);
+  const picked=[];
+  for(const t of targets){
+    let bi=-1, bd=Infinity;
+    for(let i=0;i<cand.length;i++){
+      if(used[i]) continue;
+      const d=Math.hypot(cand[i].x-t.x, cand[i].y-t.y);
+      if(d<bd){bd=d;bi=i;}
+    }
+    if(bi<0 || bd>Math.hypot(W,H)*0.45){ return null; }
+    used[bi]=true;
+    picked.push({x:cand[bi].x/scale, y:cand[bi].y/scale});
+  }
+  // فحص هندسي: رباعي كبير غير منهار
+  const wTop=Math.hypot(picked[1].x-picked[0].x, picked[1].y-picked[0].y);
+  const hLeft=Math.hypot(picked[3].x-picked[0].x, picked[3].y-picked[0].y);
+  if(wTop < fw*0.30 || hLeft < fh*0.30) return null;
+  return picked;
+}
+
+/* ============================================================
+   وضع المسح المباشر (متعدد، بدون التقاط)
+   ============================================================ */
+const live = { stream:null, raf:null, busy:false, locked:false, stableHit:0, missCount:0, count:0, audio:null };
+let frameCanvas, frameCtx;
+
+async function startLiveScan(){
+  if(!state.cvReady){ alert('محرّك المعالجة غير جاهز بعد. انتظر رسالة «جاهز» الخضراء.'); return; }
+  if(state.key.every(k=>k===null)){
+    if(!confirm('لم تُدخل مفتاح الإجابة. بدون مفتاح ستُحسب كل الإجابات خطأً. المتابعة؟')) return;
+  }
+  const video=document.getElementById('liveVideo');
+  try{
+    live.stream = await navigator.mediaDevices.getUserMedia({
+      video:{ facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720} }, audio:false
+    });
+  }catch(e){
+    alert('تعذّر فتح الكاميرا. تأكد من السماح بالوصول للكاميرا في المتصفح.');
+    return;
+  }
+  video.srcObject = live.stream;
+  await video.play();
+  try{ if(!live.audio) live.audio=new (window.AudioContext||window.webkitAudioContext)(); if(live.audio.state==='suspended') await live.audio.resume(); }catch(e){}
+  document.getElementById('gradeArea').style.display='none';
+  document.getElementById('lastResult').style.display='none';
+  document.getElementById('liveWrap').style.display='block';
+  live.locked=false; live.stableHit=0; live.missCount=0; live.busy=false;
+  setLiveStatus('info','وجّه الكاميرا نحو البطاقة كاملةً مع ظهور المربعات الأربعة.');
+  live.raf = requestAnimationFrame(liveLoop);
+}
+
+function stopLiveScan(){
+  if(live.raf) cancelAnimationFrame(live.raf);
+  live.raf=null;
+  if(live.stream){ live.stream.getTracks().forEach(t=>t.stop()); live.stream=null; }
+  document.getElementById('liveWrap').style.display='none';
+  document.getElementById('gradeArea').style.display='none';
+}
+
+let _lastProc=0;
+function liveLoop(ts){
+  if(!live.stream) return;                    // أُوقف المسح
+  live.raf = requestAnimationFrame(liveLoop);
+  if(live.busy) return;
+  if(ts - _lastProc < 280) return;            // معالجة ~3 مرات/ثانية
+  _lastProc = ts;
+  const video=document.getElementById('liveVideo');
+  if(!video.videoWidth) return;
+  live.busy=true;
+  try{
+    if(!frameCanvas){ frameCanvas=document.createElement('canvas'); frameCtx=frameCanvas.getContext('2d'); }
+    const vw=video.videoWidth, vh=video.videoHeight;
+    if(frameCanvas.width!==vw){ frameCanvas.width=vw; frameCanvas.height=vh; }
+    frameCtx.drawImage(video,0,0,vw,vh);
+
+    let src=cv.imread(frameCanvas);
+    const corners=detectFiducials(src);
+    drawLiveOverlay(vw, vh, corners);
+
+    if(corners){
+      live.missCount=0;
+      if(!live.locked){
+        live.stableHit++;
+        if(live.stableHit>=2){                 // إطاران متتاليان مستقران
+          const { result } = gradeCore(src, corners, false);
+          live.locked=true; live.stableHit=0;
+          onLiveCaptured(result);
+        }
+      }
+    }else{
+      live.stableHit=0;
+      if(live.locked){
+        live.missCount++;
+        if(live.missCount>=2){ live.locked=false; setLiveStatus('info','✅ جاهز للورقة التالية — قرّبها نحو الكاميرا.'); }
+      }else{
+        setLiveStatus('info','وجّه الكاميرا نحو البطاقة كاملةً مع ظهور المربعات الأربعة.');
+      }
+    }
+    src.delete();
+  }catch(e){ /* تجاهل أخطاء الإطار العابرة */ }
+  live.busy=false;
+}
+
+function onLiveCaptured(result){
+  live.count++;
+  const nm = result.seat ? `جلوس ${result.seat}` : `ورقة ${state.results.length+1}`;
+  state.results.push({ name:nm, ...result, at:new Date().toLocaleString('ar-SA') });
+  renderResults();
+  document.getElementById('liveCount').textContent = toArabic(live.count);
+  document.getElementById('liveLast').textContent = `${result.correct}/${result.total}`;
+  const extra = result.seat ? ` · جلوس ${result.seat}` : '';
+  setLiveStatus('ok', `✓ تم مسح ورقة (${result.correct}/${result.total})${extra}. أبعدها وقرّب التالية.`);
+  beep(); if(navigator.vibrate) navigator.vibrate(120);
+}
+
+function drawLiveOverlay(vw, vh, corners){
+  const ov=document.getElementById('liveOverlay');
+  if(ov.width!==vw){ ov.width=vw; ov.height=vh; }
+  const ctx=ov.getContext('2d');
+  ctx.clearRect(0,0,vw,vh);
+  if(corners){
+    ctx.strokeStyle = live.locked ? '#1f9d55' : '#0f766e';
+    ctx.lineWidth = Math.max(3, vw/200);
+    ctx.beginPath();
+    ctx.moveTo(corners[0].x,corners[0].y);
+    for(let i=1;i<4;i++) ctx.lineTo(corners[i].x,corners[i].y);
+    ctx.closePath(); ctx.stroke();
+    ctx.fillStyle = live.locked ? '#1f9d55' : '#0f766e';
+    corners.forEach(c=>{ ctx.beginPath(); ctx.arc(c.x,c.y,Math.max(6,vw/90),0,7); ctx.fill(); });
+  }
+}
+
+function setLiveStatus(kind,msg){
+  const el=document.getElementById('liveStatus');
+  el.className='status '+kind; el.textContent=msg;
+}
+
+function beep(){
+  try{
+    if(!live.audio) live.audio=new (window.AudioContext||window.webkitAudioContext)();
+    const ac=live.audio, o=ac.createOscillator(), g=ac.createGain();
+    o.type='sine'; o.frequency.value=880; o.connect(g); g.connect(ac.destination);
+    g.gain.setValueAtTime(0.001,ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.25,ac.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+0.18);
+    o.start(); o.stop(ac.currentTime+0.2);
+  }catch(e){}
+}
+
+/* ============================================================
+   حفظ النتائج + التصدير
+   ============================================================ */
+function saveResult(){
+  if(!state.lastGrade){ return; }
+  const name = document.getElementById('rName').value.trim() || `بطاقة ${state.results.length+1}`;
+  state.results.push({ name, ...state.lastGrade, at:new Date().toLocaleString('ar-SA') });
+  document.getElementById('lastResult').style.display='none';
+  renderResults();
+  showTab('results');
+}
+function renderResults(){
+  const host=document.getElementById('resultsTableHost');
+  document.getElementById('resCount').textContent = `${toArabic(state.results.length)} بطاقة`;
+  if(!state.results.length){
+    host.innerHTML='<div class="empty">لا توجد نتائج محفوظة بعد.</div>'; return;
+  }
+  let html='<table><thead><tr><th>#</th><th>رقم الجلوس</th><th>الصف</th><th>الاسم</th><th>الدرجة</th><th>صحيحة</th><th>خاطئة</th><th>متروكة</th><th></th></tr></thead><tbody>';
+  state.results.forEach((r,i)=>{
+    const pct=r.total? r.correct/r.total:0;
+    const cls=pct>=0.5?'score-good':(pct>=0.3?'score-mid':'score-bad');
+    html += `<tr>
+      <td>${i+1}</td>
+      <td style="font-weight:700">${escapeHtml(r.seat||'—')}</td>
+      <td>${escapeHtml(r.grade||'—')}</td>
+      <td><input class="nameinput" value="${escapeHtml(r.name)}" onchange="editName(${i},this.value)"></td>
+      <td class="${cls}">${r.correct}/${r.total}</td>
+      <td style="color:var(--ok)">${r.correct}</td>
+      <td style="color:var(--bad)">${r.wrong}</td>
+      <td style="color:var(--blank)">${r.blank}</td>
+      <td><button class="ghost" style="padding:6px 8px" onclick="delResult(${i})">حذف</button></td>
+    </tr>`;
+  });
+  html+='</tbody></table>';
+  host.innerHTML=html;
+}
+function editName(i,v){ state.results[i].name=v; }
+function delResult(i){ state.results.splice(i,1); renderResults(); }
+function exportCSV(){
+  if(!state.results.length){ alert('لا توجد نتائج للتصدير.'); return; }
+  let csv='\uFEFFرقم الجلوس,الصف,الاسم,الدرجة,الكلي,صحيحة,خاطئة,متروكة,الوقت\n';
+  state.results.forEach(r=>{
+    csv += `"${r.seat||''}","${r.grade||''}","${r.name}",${r.correct},${r.total},${r.correct},${r.wrong},${r.blank},"${r.at}"\n`;
+  });
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob); a.download='نتائج_التصحيح.csv'; a.click();
+}
+function escapeHtml(s){return (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+function toArabic(n){return String(n).replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d]);}
+
+/* ============================================================
+   التبويبات
+   ============================================================ */
+function showTab(t){
+  ['design','grade','results'].forEach(x=>{
+    document.getElementById('panel-'+x).classList.toggle('active', x===t);
+    document.getElementById('tab-'+x).classList.toggle('active', x===t);
+  });
+}
+
+/* ============================================================
+   التهيئة
+   ============================================================ */
+window.addEventListener('load', ()=>{
+  renderSections();
+  renderSheet();
+  const wrap=document.getElementById('canvasWrap');
+  wrap.addEventListener('click', onCanvasTap);
+});
+</script>
+</body>
+</html>
