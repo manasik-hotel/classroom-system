@@ -441,7 +441,7 @@ function computeLayout(){
   const qrMode = (cfg.idMode === 'import');
   let qr = null;
   {
-    const boxW=300, boxRight=CW-M, boxLeft=boxRight-boxW, boxTop=200, boxBottom=648;
+    const boxW=300, boxRight=CW-M, boxLeft=boxRight-boxW, boxTop=200, boxBottom=712;
     box = { x:boxLeft, y:boxTop, w:boxW, h:boxBottom-boxTop, right:boxRight, bottom:boxBottom };
     // لا شبكات تظليل في الورقة الكاملة — البيانات نصّية، والهوية بالباركود (استيراد) أو يدوية (تضليل)
     idLayout = { enabled:false, bottomY:boxTop, cols:[], mode:'box' };
@@ -768,27 +768,27 @@ function buildContentSVG(L, student){
     // صندوق البيانات
     svg += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#fcfdfd" stroke="#cfd9d7" stroke-width="1.6" rx="10"/>`;
     svg += `<text x="${b.right-14}" y="${b.y+28}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#0b5a54">بيانات الطالب</text>`;
-    const lx = b.x+14, rx = b.right-14;
+    const lx = b.x+16, rx = b.right-16;
     const isImport = (c.idMode==='import');
     const seatVal = student ? (student.seat||'') : '';
     const nameVal = student ? (student.name||'') : '';
-    // سطر بقيمة مطبوعة (محاذاة يمين)
-    const valLine = (lbl,val,yy)=> rlabel(val ? `${lbl} ${val}` : `${lbl}`, rx, yy, 13);
-    // سطر يدوي (لافتة يمين + سطر نقطي يساره)
-    const handLine = (lbl,yy)=>{ const w=measureTextW(lbl,13); return rlabel(lbl, rx, yy, 13) + dotted(lx, rx-w-8, yy+4); };
-    let y = b.y+58, step=31;
+    // محاذاة يمين حقيقية (RTL) عند rx — تتراصّ تماماً حتى مع الأرقام اللاتينية
+    const rtlLine = (s,yy,sz)=> `<text x="${rx}" y="${yy}" direction="rtl" text-anchor="start" font-size="${sz||14}" font-weight="bold" fill="#15242b">${escapeXml(s)}</text>`;
+    const valLine  = (lbl,val,yy)=> rtlLine(val ? `${lbl} ${val}` : lbl, yy);
+    // سطر يدوي: لافتة يمين + سطر نقطي للكتابة يساره
+    const handLine = (lbl,yy)=> rtlLine(lbl, yy) + dotted(lx, rx - measureTextW(lbl,14) - 12, yy+5);
+    const step = isImport ? 34 : 46;          // تباعد أوسع في وضع الكتابة اليدوية
+    let y = b.y+64;
+    if(isImport){ svg += valLine('الاسم:', nameVal || '——', y); }
+    else        { svg += handLine('الاسم:', y); }
+    y+=step; svg += valLine('المدرسة:', c.school, y);
+    y+=step; svg += valLine('الصف / الفصل:', c.className, y);
+    y+=step; svg += valLine('الفترة:', c.period, y);
+    y+=step; svg += valLine('المادة:', c.subject, y);
+    y+=step;
     if(isImport){
-      svg += valLine('الاسم:', nameVal || '——', y); y+=step;
-    } else {
-      svg += handLine('الاسم:', y); y+=step;
-    }
-    svg += valLine('المدرسة:', c.school, y); y+=step;
-    svg += valLine('الصف / الفصل:', c.className, y); y+=step;
-    svg += valLine('الفترة:', c.period, y); y+=step;
-    svg += valLine('المادة:', c.subject, y); y+=step;
-    if(isImport){
-      svg += valLine('رقم الجلوس:', seatVal || '——', y); y+=step;
-      if(L.qr){ svg += qrBlockSVG({ x:L.qr.x, y:y+6, size:L.qr.size }, student); }
+      svg += valLine('رقم الجلوس:', seatVal || '——', y);
+      if(L.qr){ svg += qrBlockSVG({ x:L.qr.x, y:y+12, size:L.qr.size }, student); }
     } else {
       svg += handLine('رقم الجلوس:', y);
     }
