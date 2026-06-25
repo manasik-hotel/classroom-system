@@ -175,7 +175,7 @@
       <div style="margin-bottom:8px;font-size:13px;font-weight:700;color:var(--teal-d)">📝 أقسام الأسئلة</div>
       <div id="sectionsHost"></div>
       <button id="addSectionBtn" class="ghost" style="margin-bottom:8px" onclick="addSection()">+ إضافة قسم</button>
-      <p id="qaCapHint" class="hint" style="display:none"></p>
+      <p id="qaCapHint" class="hint" style="display:none;color:#d32f2f;font-weight:600"></p>
 
       <input id="cfgIdEnabled" type="checkbox" checked style="display:none">
       <input id="cfgSeatDigits" type="number" value="10" style="display:none">
@@ -187,7 +187,7 @@
         <input id="cfgPerCol" type="number" min="5" max="40" value="20">
       </label>
       <button class="primary" onclick="renderSheet()">تحديث المعاينة</button>
-      <p class="hint">الأنواع: <b>اختيار من متعدد</b> (٢–٥ خيارات)، <b>صواب/خطأ</b> (دائرتان ص/خ)، <b>مزاوجة</b>. في شكل «أسئلة + إجابة» تُطبَّق حدود تلقائية على عدد الأسئلة حسب أسلوب التعريف. المربعات السوداء في الأركان ضرورية للقراءة.</p>
+      <p class="hint" style="color:#d32f2f;font-weight:600">الأنواع: <b>اختيار من متعدد</b> (٢–٥ خيارات)، <b>صواب/خطأ</b> (دائرتان ص/خ)، <b>مزاوجة</b>. في شكل «أسئلة + إجابة» تُطبَّق حدود تلقائية على عدد الأسئلة حسب أسلوب التعريف. المربعات السوداء في الأركان ضرورية للقراءة.</p>
     </div>
 
     <div class="card">
@@ -438,16 +438,15 @@ function computeLayout(){
   const fid = [ {x:inset,y:inset}, {x:CW-inset,y:inset}, {x:CW-inset,y:CH-inset}, {x:inset,y:CH-inset} ];
 
   let qLeft, qRight, gridTop, box=null, idLayout;
-  const qrMode = cfg.qrMode;
+  const qrMode = (cfg.idMode === 'import');
   let qr = null;
   {
-    const boxW=296, boxRight=CW-M, boxLeft=boxRight-boxW, boxTop=178, boxBottom=648;
+    const boxW=300, boxRight=CW-M, boxLeft=boxRight-boxW, boxTop=200, boxBottom=648;
     box = { x:boxLeft, y:boxTop, w:boxW, h:boxBottom-boxTop, right:boxRight, bottom:boxBottom };
+    // لا شبكات تظليل في الورقة الكاملة — البيانات نصّية، والهوية بالباركود (استيراد) أو يدوية (تضليل)
+    idLayout = { enabled:false, bottomY:boxTop, cols:[], mode:'box' };
     if(qrMode){
-      idLayout = { enabled:false, bottomY:boxTop, cols:[], mode:'box' };
-      qr = { x: boxLeft + (boxW-190)/2, y: boxTop + 250, size: 190 };  // داخل صندوق الطالب
-    } else {
-      idLayout = computeIdBox(box);
+      qr = { x: boxLeft + (boxW-176)/2, y: boxTop + 250, size: 176 };  // أسفل قائمة البيانات
     }
     gridTop = boxTop;
     qLeft = M; qRight = boxLeft - 24;
@@ -764,30 +763,34 @@ function buildContentSVG(L, student){
     svg += `<text x="${(L.qLeft+L.qRight)/2}" y="118" text-anchor="middle" font-size="22" font-weight="bold" fill="#0b5a54">${escapeXml(c.title)}</text>`;
     svg += `<text x="${(L.qLeft+L.qRight)/2}" y="146" text-anchor="middle" font-size="13" fill="#5b6f76">${escapeXml(c.sub)}</text>`;
     const b = L.box;
+    // الشعار الرسمي أعلى صندوق البيانات (خارج الإطار)
+    svg += moeLogoSVG((b.x+b.right)/2, 70, 150);
+    // صندوق البيانات
     svg += `<rect x="${b.x}" y="${b.y}" width="${b.w}" height="${b.h}" fill="#fcfdfd" stroke="#cfd9d7" stroke-width="1.6" rx="10"/>`;
-    svg += `<text x="${b.right-14}" y="${b.y+30}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#0b5a54">بيانات الطالب</text>`;
+    svg += `<text x="${b.right-14}" y="${b.y+28}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#0b5a54">بيانات الطالب</text>`;
     const lx = b.x+14, rx = b.right-14;
-    if(L.qr){
-      // وضع الباركود: اسم ورقم الجلوس مطبوعان + باركود QR
-      const nm = student ? student.name : '——————————';
-      const seat = student ? student.seat : '——————————';
-      const klass = student ? (student.klass||c.sub||'') : '';
-      svg += rlabel('الاسم: ' + nm, rx, b.y+64, 14);
-      svg += rlabel('رقم الجلوس: ' + seat, rx, b.y+96, 14);
-      if(klass) svg += rlabel('الصف: ' + klass, rx, b.y+128, 13);
-      svg += qrBlockSVG(L.qr, student);
+    const isImport = (c.idMode==='import');
+    const seatVal = student ? (student.seat||'') : '';
+    const nameVal = student ? (student.name||'') : '';
+    // سطر بقيمة مطبوعة (محاذاة يمين)
+    const valLine = (lbl,val,yy)=> rlabel(val ? `${lbl} ${val}` : `${lbl}`, rx, yy, 13);
+    // سطر يدوي (لافتة يمين + سطر نقطي يساره)
+    const handLine = (lbl,yy)=>{ const w=measureTextW(lbl,13); return rlabel(lbl, rx, yy, 13) + dotted(lx, rx-w-8, yy+4); };
+    let y = b.y+58, step=31;
+    if(isImport){
+      svg += valLine('الاسم:', nameVal || '——', y); y+=step;
     } else {
-      const nameLine = (lbl,yy)=>{ const w = measureTextW(lbl,13); return rlabel(lbl, rx, yy, 13) + dotted(lx, rx - w - 8, yy+4); };
-      svg += nameLine('الاسم:', b.y+64);
-      svg += nameLine('المدرسة:', b.y+98);
-      svg += nameLine('الصف / الفصل:', b.y+132);
-      if(id.enabled){
-        svg += rlabel('رقم الجلوس', id.seatRightX, id.labelY, 12);
-        if(id.gradeN>0) svg += rlabel('الصف', id.gradeRightX, id.labelY, 12);
-        const firstSeatX = id.cols[0] ? id.cols[0].cx : rx;
-        for(let d=0; d<10; d++) svg += `<text x="${firstSeatX + id.r + 11}" y="${id.digitsTop + d*id.vGap + 4}" text-anchor="middle" font-size="10" fill="#9aa7ab">${d}</text>`;
-        svg += idBubblesSVG(id);
-      }
+      svg += handLine('الاسم:', y); y+=step;
+    }
+    svg += valLine('المدرسة:', c.school, y); y+=step;
+    svg += valLine('الصف / الفصل:', c.className, y); y+=step;
+    svg += valLine('الفترة:', c.period, y); y+=step;
+    svg += valLine('المادة:', c.subject, y); y+=step;
+    if(isImport){
+      svg += valLine('رقم الجلوس:', seatVal || '——', y); y+=step;
+      if(L.qr){ svg += qrBlockSVG({ x:L.qr.x, y:y+6, size:L.qr.size }, student); }
+    } else {
+      svg += handLine('رقم الجلوس:', y);
     }
     svg += `<text x="${L.qRight}" y="168" direction="rtl" text-anchor="start" font-size="12" font-weight="bold" fill="#5b6f76">ظلّل دائرة واحدة فقط لكل سؤال</text>`;
   }
@@ -908,13 +911,21 @@ function qaBanner(b, align){
   return s;
 }
 // شعار وزارة التعليم (تمثيل أنيق — كلمة الوزارة بنقوش خضراء)
-function qaMiniLogo(cx, cy){
+// شعار وزارة التعليم الرسمي — رسم متجهي أمين (نقاط مستخرَجة من الشعار الأصلي)
+const MOE_DOTS=[[7,0,100,"#23B1A4"],[993,0,100,"#23B1A4"],[904,9,91,"#23B1A4"],[96,13,91,"#23B1A4"],[818,25,92,"#0E9C8C"],[183,28,91,"#0E9C8C"],[732,48,78,"#0E9C8C"],[268,50,78,"#0E9C8C"],[650,80,61,"#0E9C8C"],[350,82,61,"#0E9C8C"],[997,104,88,"#6FC9BE"],[3,107,88,"#6FC9BE"],[902,107,80,"#23B1A4"],[95,109,80,"#23B1A4"],[813,122,74,"#23B1A4"],[188,124,74,"#23B1A4"],[573,125,52,"#0E9C8C"],[428,128,52,"#0E9C8C"],[726,149,63,"#0E9C8C"],[274,151,63,"#0E9C8C"],[500,179,48,"#0E9C8C"],[645,188,57,"#0E9C8C"],[356,190,57,"#0E9C8C"],[1000,201,79,"#6FC9BE"],[0,204,80,"#6FC9BE"],[902,201,75,"#6FC9BE"],[101,204,75,"#6FC9BE"],[800,222,62,"#23B1A4"],[200,224,62,"#23B1A4"],[569,237,48,"#0E9C8C"],[432,239,48,"#0E9C8C"],[710,258,44,"#23B1A4"],[290,260,44,"#23B1A4"],[500,300,44,"#0E9C8C"]];
+function moeLogoSVG(cx, topY, w){
+  const h = w*0.30;                 // نسبة النمط النقطي
+  const sx = w/1000, sy = h/300;
+  const x0 = cx - w/2;
+  const maxR = w*0.021;
   let s = '';
-  // نقوش نقطية صغيرة تحاكي الإيقونة
-  const dots = [[-30,-8],[-24,-12],[-18,-8],[-24,-4],[30,-8],[24,-12],[18,-8],[24,-4]];
-  for(const [dx,dy] of dots) s += `<circle cx="${cx+dx}" cy="${cy+dy}" r="2.4" fill="${QA_GREEN}"/>`;
-  s += `<text x="${cx}" y="${cy+22}" text-anchor="middle" font-size="17" font-weight="bold" fill="${QA_GREEN}">وزارة التعليم</text>`;
-  s += `<text x="${cx}" y="${cy+38}" text-anchor="middle" font-size="9" letter-spacing="1" fill="#7aa295">Ministry of Education</text>`;
+  for(const d of MOE_DOTS){
+    const px = x0 + d[0]*sx, py = topY + d[1]*sy, rad = Math.max(1.1, d[2]/100*maxR);
+    s += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${rad.toFixed(1)}" fill="${d[3]}"/>`;
+  }
+  const wy = topY + h + w*0.085;
+  s += `<text x="${cx}" y="${wy}" text-anchor="middle" font-size="${(w*0.125).toFixed(1)}" font-weight="bold" fill="#1f9e90">وزارة التعليم</text>`;
+  s += `<text x="${cx}" y="${(wy + w*0.062).toFixed(1)}" text-anchor="middle" font-size="${(w*0.05).toFixed(1)}" letter-spacing="0.5" fill="#8a9a99">Ministry of Education</text>`;
   return s;
 }
 function buildQASheet(L, student){
@@ -936,8 +947,8 @@ function buildQASheet(L, student){
     svg += `<text x="${offX}" y="${oy}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">${escapeXml(line)}</text>`;
     oy += 30;
   }
-  // الشعار (وسط)
-  svg += qaMiniLogo(hdr.logoCx, hdr.boxTop+44);
+  // الشعار الرسمي (وسط)
+  svg += moeLogoSVG(hdr.logoCx, hdr.boxTop+10, 150);
 
   // الجزء اليساري: باركود (استيراد) أو خانات يدوية (تضليل)
   if(isImport){
@@ -952,12 +963,15 @@ function buildQASheet(L, student){
     svg += `<text x="${tR}" y="${midY-10}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">الطالب: ${escapeXml(nm)}</text>`;
     svg += `<text x="${tR}" y="${midY+20}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">رقم الجلوس: ${escapeXml(seat)}</text>`;
   } else {
-    const lblX = hdr.leftL+150;
-    svg += `<text x="${lblX}" y="${hdr.boxTop+56}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">اسم الطالب:</text>`;
-    svg += dotted(hdr.leftL, lblX-92, hdr.boxTop+58);
-    svg += `<text x="${lblX}" y="${hdr.boxTop+104}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">رقم الجلوس:</text>`;
-    svg += dotted(hdr.leftL, lblX-92, hdr.boxTop+106);
-    svg += `<text x="${hdr.leftL+170}" y="${hdr.boxTop+134}" direction="rtl" text-anchor="start" font-size="10" fill="#9aa7ab">يُكتب بخط واضح</text>`;
+    // إزاحة لليمين مع سطر كتابة أطول
+    const tR = hdr.leftR;                       // حافة يمنى (أقصى اليمين في منطقة المعلومات)
+    const nameLbl='اسم الطالب:', seatLbl='رقم الجلوس:';
+    const wN = measureTextW(nameLbl,14), wS = measureTextW(seatLbl,14);
+    svg += `<text x="${tR}" y="${hdr.boxTop+58}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">${nameLbl}</text>`;
+    svg += dotted(hdr.leftL, tR-wN-10, hdr.boxTop+60);
+    svg += `<text x="${tR}" y="${hdr.boxTop+108}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">${seatLbl}</text>`;
+    svg += dotted(hdr.leftL, tR-wS-10, hdr.boxTop+110);
+    svg += `<text x="${tR}" y="${hdr.boxTop+134}" direction="rtl" text-anchor="start" font-size="10" fill="#9aa7ab">يُكتب بخط واضح</text>`;
   }
 
   // ---- شريط العنوان ----
