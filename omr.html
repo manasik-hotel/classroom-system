@@ -520,10 +520,10 @@ function computeLayoutQA(){
     cfg.school || ''
   ];
   hdr.logoCx = (cL+cR)/2;
-  hdr.leftL = cL; hdr.leftR = cL+360;        // ثلث المعلومات (يسار)
+  hdr.leftL = cL; hdr.leftR = cL+536;        // منطقة معلومات أوسع (حتى قبل الشعار)
   hdr.isImport = isImport;
   let qr = null;
-  if(isImport){ qr = { x: cL+8, y: hdr.boxTop+14, size: 112 }; }
+  if(isImport){ qr = { x: cL+6, y: hdr.boxTop+18, size: 104 }; }
 
   // ---- شريط العنوان + جدول البيانات ----
   hdr.titleBar = { x:cL, y:226, w:cR-cL, h:42 };
@@ -958,10 +958,10 @@ function buildQASheet(L, student){
       if(student && student.seat && typeof qrcode!=='undefined') svg += qrModulesSVG(String(student.seat), L.qr.x, L.qr.y, L.qr.size);
       else { svg += `<rect x="${L.qr.x}" y="${L.qr.y}" width="${L.qr.size}" height="${L.qr.size}" fill="#f3f6f5" stroke="#c2cccd" stroke-dasharray="5 5"/><text x="${L.qr.x+L.qr.size/2}" y="${L.qr.y+L.qr.size/2}" text-anchor="middle" font-size="12" fill="#9aa7ab">باركود</text>`; }
     }
-    const tR = hdr.leftR;                 // حافة يمنى لنصوص الطالب (تتدفّق يساراً فلا تلامس الباركود)
+    // النصوص محاذاة يمين عند حافة المنطقة الواسعة، تتدفّق يساراً (مساحة واسعة قبل الشعار)
     const midY = hdr.boxTop + (hdr.boxBottom-hdr.boxTop)/2;
-    svg += `<text x="${tR}" y="${midY-10}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">الطالب: ${escapeXml(nm)}</text>`;
-    svg += `<text x="${tR}" y="${midY+20}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#1a2b33">رقم الجلوس: ${escapeXml(seat)}</text>`;
+    svg += `<text x="${hdr.leftR}" y="${midY-16}" direction="rtl" text-anchor="start" font-size="15" font-weight="bold" fill="#1a2b33">الطالب: ${escapeXml(nm)}</text>`;
+    svg += `<text x="${hdr.leftR}" y="${midY+26}" direction="rtl" text-anchor="start" font-size="15" font-weight="bold" fill="#1a2b33">رقم الجلوس: ${escapeXml(seat)}</text>`;
   } else {
     // إزاحة لليمين مع سطر كتابة أطول
     const tR = hdr.leftR;                       // حافة يمنى (أقصى اليمين في منطقة المعلومات)
