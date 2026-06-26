@@ -41,6 +41,8 @@
   .card{background:var(--white);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px;box-shadow:var(--shadow)}
   .card h2{margin:0 0 12px;font-size:15px;color:var(--teal-d)}
   .card h2 .sub{font-weight:400;color:var(--muted);font-size:12px;margin-right:6px}
+  .collapseBtn{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border:1px solid var(--line);background:#f0f5f4;color:var(--teal-d);border-radius:7px;font-size:18px;font-weight:700;cursor:pointer;line-height:1;vertical-align:middle;margin-left:6px}
+  .collapseBtn:active{background:#e2eeec}
   label.field{display:block;margin-bottom:12px;font-size:13px;font-weight:600;color:var(--muted)}
   label.field input,label.field select{
     width:100%;margin-top:6px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
@@ -224,7 +226,8 @@
   <section id="panel-students" class="panel active">
     <!-- ===== الفصول ===== -->
     <div class="card">
-      <h2>الفصول <span class="sub">أضف الفصول أولاً قبل تسجيل الطلاب</span></h2>
+      <h2><button class="collapseBtn" onclick="toggleCard('cardClasses',this)">−</button> الفصول <span class="sub">أضف الفصول أولاً قبل تسجيل الطلاب</span></h2>
+      <div id="cardClasses">
       <div class="row" style="margin-bottom:10px">
         <label class="field" style="flex:2">اسم الصف
           <input id="clName" placeholder="مثال: أول ثانوي / 1">
@@ -235,11 +238,13 @@
       </div>
       <button class="primary" onclick="addClass()">➕ إضافة الصف</button>
       <div id="classesHost" style="margin-top:12px"><div class="empty">لا توجد فصول بعد. أضف فصلاً للبدء.</div></div>
+      </div>
     </div>
 
     <!-- ===== تسجيل طالب فردي ===== -->
     <div class="card">
-      <h2>إضافة طالب <span class="sub">تسجيل فردي في قاعدة البيانات الثابتة</span></h2>
+      <h2><button class="collapseBtn" onclick="toggleCard('cardAddStudent',this)">−</button> إضافة طالب <span class="sub">تسجيل فردي في قاعدة البيانات الثابتة</span></h2>
+      <div id="cardAddStudent">
       <div class="row" style="margin-bottom:10px">
         <label class="field" style="flex:2">اسم الطالب
           <input id="stName" placeholder="مثال: محمد نجيب حكمي">
@@ -252,20 +257,23 @@
         </label>
       </div>
       <button class="primary" onclick="addStudentManual()">➕ إضافة الطالب</button>
+      </div>
     </div>
 
     <!-- ===== استيراد Excel ===== -->
     <div class="card">
-      <h2>استيراد من Excel <span class="sub">دفعة طلاب لصفٍّ محدّد</span></h2>
+      <h2><button class="collapseBtn" onclick="toggleCard('cardImport',this)">−</button> استيراد من Excel <span class="sub">دفعة طلاب لصفٍّ محدّد</span></h2>
+      <div id="cardImport">
       <label class="field">الصف الذي ستُضاف إليه الدفعة
         <select id="stImportClass"><option value="">— اختر الصف أولاً —</option></select>
       </label>
-      <p class="hint" style="margin-top:6px;color:#d32f2f;font-weight:600">ملاحظة مهمة: في ملف Excel ضع <b>رقم الهوية في العمود A</b> و<b>اسم الطالب في العمود B</b>. لا يتم الاستيراد إلا بعد تحديد الصف.</p>
+      <p class="hint" style="margin-top:6px;color:#d32f2f;font-weight:600">ملاحظة مهمة: في ملف Excel ضع <b>رقم الهوية في العمود A</b> و<b>اسم الطالب في العمود B</b>. عند غياب رقم الهوية يُولَّد تلقائياً (Class-رمز الصف-تسلسل). لا يتم الاستيراد إلا بعد تحديد الصف.</p>
       <input id="xlsxFile" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onXlsxChosen(event)">
-      <button class="ghost" onclick="document.getElementById('xlsxFile').click()">📂 اختيار ملف Excel/CSV</button>
+      <button class="primary" style="background:#0b7a63" onclick="document.getElementById('xlsxFile').click()">📂 اختيار ملف Excel/CSV</button>
       <div style="margin:12px 0 6px;font-size:12px;color:var(--muted)">أو الصق الصفوف يدوياً (رقم الهوية ثم الاسم، سطر لكل طالب):</div>
       <textarea id="stBulk" rows="4" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;font-weight:600;color:var(--ink);background:#fcfdfd" placeholder="1061532883&#9;محمد نجيب حكمي&#10;1061532884&#9;أحمد علي"></textarea>
       <button class="primary" style="margin-top:10px" onclick="importStudents()">⬆️ استيراد للصف المحدّد</button>
+      </div>
     </div>
 
     <!-- ===== عرض الطلاب حسب الصف ===== -->
@@ -1264,11 +1272,13 @@ function delClass(code){
     ? `حذف الصف «${cl?cl.name:code}» سيحذف أيضاً ${toArabic(studs.length)} طالباً مرتبطين به نهائياً. متابعة؟`
     : `حذف الصف «${cl?cl.name:code}»؟`;
   if(!confirm(msg)) return;
-  // حذف طلاب الصف وبياناتهم المرتبطة
+  // حذف طلاب الصف وكل بياناتهم المرتبطة (حضور + سجل أعمال)
   studs.forEach(s=>{ delete state.attendance[s.seat]; delete state.selectedStudents[s.seat]; });
+  delete state.workLog[code];
   state.students = state.students.filter(s=>s.classCode!==code);
   state.classes = state.classes.filter(c=>c.code!==code);
-  refreshClassDropdowns(); renderClasses(); renderStudents(); saveStudentsToCloud();
+  refreshClassDropdowns(); renderClasses(); renderStudents(); renderWorkLog();
+  saveStudentsToCloud(); saveWorkLogToCloud();
 }
 function classNameByCode(code){ const c=state.classes.find(x=>x.code===code); return c? c.name : ''; }
 function renderClasses(){
@@ -1292,19 +1302,36 @@ function refreshClassDropdowns(){
 }
 
 /* ---- الطلاب ---- */
+// التسلسل التلقائي لرقم الهوية عند غيابه: Class-<رمز الصف>-<رقم>
+function nextAutoSeat(classCode){
+  const prefix = `Class-${classCode}-`;
+  let max = 0;
+  state.students.forEach(s=>{
+    if(s.seat && s.seat.indexOf(prefix)===0){
+      const n = parseInt(s.seat.slice(prefix.length),10);
+      if(!isNaN(n) && n>max) max=n;
+    }
+  });
+  return prefix + (max+1);
+}
 function addStudentManual(){
   if(!state.classes.length){ alert('أضف فصلاً واحداً على الأقل قبل تسجيل الطلاب.'); return; }
   const name = (document.getElementById('stName').value||'').trim();
-  const seat = normalizeSeat(document.getElementById('stSeat').value);
+  const rawId = (document.getElementById('stSeat').value||'').trim();
   const classCode = document.getElementById('stClassSel').value;
   if(!classCode){ alert('اختر الصف.'); return; }
-  if(!seat){ alert('أدخل رقم الهوية.'); return; }
   if(!name){ alert('أدخل اسم الطالب.'); return; }
+  // رقم الهوية إلزامي وأرقام فقط (في التسجيل الفردي)
+  if(!rawId){ alert('رقم الهوية إلزامي ولا يمكن تركه فارغاً.'); return; }
+  const seat = normalizeSeat(rawId);
+  if(!seat || normalizeSeat(rawId)!==rawId.replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])){
+    alert('رقم الهوية يجب أن يكون أرقاماً فقط بلا حروف أو رموز.'); return;
+  }
   upsertStudent({ seat, name, classCode });
   document.getElementById('stName').value=''; document.getElementById('stSeat').value='';
   renderStudents(); saveStudentsToCloud();
 }
-// استيراد يدوي (لصق): رقم الهوية ثم الاسم، لصفٍّ محدّد
+// استيراد يدوي (لصق): رقم الهوية ثم الاسم، لصفٍّ محدّد (رقم تلقائي عند غيابه)
 function importStudents(){
   const classCode = document.getElementById('stImportClass').value;
   if(!classCode){ alert('اختر الصف أولاً قبل الاستيراد.'); return; }
@@ -1313,16 +1340,20 @@ function importStudents(){
   let added=0;
   for(const line of lines){
     const parts = line.split(/[,،\t]/).map(p=>p.trim());
-    if(parts.length<2) continue;
-    const seat = normalizeSeat(parts[0]);   // العمود A = رقم الهوية
-    const name = parts[1];                   // العمود B = الاسم
-    if(seat && name){ upsertStudent({ seat, name, classCode }); added++; }
+    if(!parts.length) continue;
+    // الصيغة: رقم الهوية ثم الاسم — وإن كان أول حقل اسماً (سطر بحقل واحد) يُعدّ اسماً بلا هوية
+    let seat='', name='';
+    if(parts.length>=2){ seat = normalizeSeat(parts[0]); name = parts[1]; }
+    else { name = parts[0]; }
+    if(!name) continue;
+    if(!seat) seat = nextAutoSeat(classCode);   // توليد تلقائي عند غياب الهوية
+    upsertStudent({ seat, name, classCode }); added++;
   }
   document.getElementById('stBulk').value='';
   renderStudents(); saveStudentsToCloud();
   alert(`تم استيراد/تحديث ${toArabic(added)} طالب في الصف.`);
 }
-// استيراد من ملف Excel/CSV عبر SheetJS — العمود A هوية، العمود B اسم
+// استيراد من ملف Excel/CSV عبر SheetJS — العمود A هوية، العمود B اسم (رقم تلقائي عند غيابه)
 function onXlsxChosen(ev){
   const file = ev.target.files && ev.target.files[0];
   ev.target.value='';
@@ -1338,10 +1369,11 @@ function onXlsxChosen(ev){
       const rows = XLSX.utils.sheet_to_json(ws, {header:1, blankrows:false});
       let added=0;
       for(const row of rows){
-        if(!row || row.length<2) continue;
-        const seat = normalizeSeat(row[0]);          // العمود A
-        const name = String(row[1]||'').trim();      // العمود B
-        if(!seat || !name) continue;                 // يتخطّى صف العناوين تلقائياً
+        if(!row || !row.length) continue;
+        const seatRaw = normalizeSeat(row[0]);            // العمود A
+        const name = String(row[1]!=null?row[1]:'').trim(); // العمود B
+        if(!name) continue;                                // لا بد من اسم
+        const seat = seatRaw || nextAutoSeat(classCode);   // توليد تلقائي عند غياب الهوية
         upsertStudent({ seat, name, classCode }); added++;
       }
       renderStudents(); saveStudentsToCloud();
@@ -1361,8 +1393,16 @@ function delStudent(seat){
   renderStudents(); saveStudentsToCloud();
 }
 function findStudent(seat){
-  const s = normalizeSeat(seat);
-  return state.students.find(x=>x.seat===s) || null;
+  const raw = String(seat==null?'':seat).trim();
+  const norm = normalizeSeat(seat);
+  return state.students.find(x=> x.seat===raw || x.seat===norm || (norm && normalizeSeat(x.seat)===norm)) || null;
+}
+// تصغير/توسيع بطاقة
+function toggleCard(id, btn){
+  const el = document.getElementById(id); if(!el) return;
+  const hidden = el.style.display==='none';
+  el.style.display = hidden ? '' : 'none';
+  if(btn) btn.textContent = hidden ? '−' : '+';
 }
 function toggleSelStudent(seat,checked){
   if(checked) state.selectedStudents[seat]=true; else delete state.selectedStudents[seat];
@@ -1469,7 +1509,10 @@ function commitAttendance(){
     const status = att ? att.status : 'present';        // غير المحدَّد = حاضر
     const note = att ? (att.note||'') : '';
     const entry = workEntry(s.classCode, s.seat);
-    entry.events.push({ date, ts, status, note });
+    // الحفظ بنفس التاريخ = تعديل القيمة لا إضافة سجل جديد (فلا يتضاعف العدّ)
+    const existing = entry.events.find(e=>e.date===date);
+    if(existing){ existing.status=status; existing.note=note; existing.ts=ts; }
+    else entry.events.push({ date, ts, status, note });
     if(status==='absent') nAbs++; else if(status==='late') nLate++; else nPres++;
   });
   // تصفير الحالة اللحظية لطلاب هذا العرض بعد الحفظ
