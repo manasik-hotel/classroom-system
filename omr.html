@@ -125,7 +125,7 @@
     <button id="tab-design" onclick="showTab('design')">🖨️ التصميم</button>
     <button id="tab-grade" onclick="showTab('grade')">📷 التصحيح</button>
     <button id="tab-results" onclick="showTab('results')">📊 النتائج</button>
-    <button id="tab-cloud" onclick="showTab('cloud')">💾 الحفظ</button>
+    <button id="tab-cloud" onclick="showTab('cloud')">💼 سجل الأعمال</button>
   </nav>
 </header>
 
@@ -284,8 +284,10 @@
         </div>
       </div>
       <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد.</div></div>
-      <div class="row" style="margin-top:12px">
-        <button class="ghost" onclick="saveStudentsToCloud(true)">⬆️ حفظ سحابياً</button>
+      <button class="primary" style="margin-top:12px;width:100%;background:#0b7a63" onclick="commitAttendance()">💾 الحفظ في سجل الأعمال</button>
+      <p class="hint" style="margin-top:6px">يسجّل حضور/غياب/تأخّر كل طلاب العرض الحالي بتاريخ اليوم (غير المحدَّد = حاضر)، تراكمياً في سجل الأعمال. الحالة اللحظية تُصفَّر بعد ٩٠ دقيقة تلقائياً.</p>
+      <div class="row" style="margin-top:8px">
+        <button class="ghost" onclick="saveStudentsToCloud(true)">⬆️ حفظ القائمة</button>
         <button class="ghost" onclick="loadStudentsFromCloud(true)">⬇️ تحميل</button>
       </div>
     </div>
@@ -369,17 +371,30 @@
     </div>
   </section>
 
-  <!-- ================= الحفظ = سجل النتائج ================= -->
+  <!-- ================= سجل الأعمال ================= -->
   <section id="panel-cloud" class="panel">
     <div class="card">
-      <h2>سجل النتائج المحفوظة <span class="sub" id="recCount">٠ سجل</span></h2>
+      <h2>سجل الأعمال <span class="sub">حضور · تأخّر · درجات الفترات حسب الصف</span></h2>
       <div id="cloudStatus" class="status info" style="margin-bottom:10px">جارٍ التهيئة…</div>
-      <p class="hint" style="margin-top:0">عند الضغط على «حفظ الدرجات» في تبويب النتائج تُحفظ النتائج هنا مجمّعةً حسب الصف. تُخزَّن سحابياً تلقائياً.</p>
-      <div id="savedRecordsHost"><div class="empty">لا توجد سجلات محفوظة بعد.</div></div>
-      <button class="ghost no-print" style="margin-top:10px" onclick="loadSavedRecords(true)">🔄 تحديث السجلات</button>
+      <label class="field">عرض سجل الصف
+        <select id="wlViewClass" onchange="renderWorkLog()"><option value="">— اختر الصف —</option></select>
+      </label>
+      <div id="workLogHost"><div class="empty">اختر صفاً لعرض سجل أعماله.</div></div>
+      <button class="ghost no-print" style="margin-top:10px" onclick="loadWorkLog(true)">🔄 تحديث السجل</button>
     </div>
   </section>
 </main>
+
+<!-- نافذة سجل الطالب -->
+<div id="stRecordOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,30,28,.55);z-index:9999;overflow-y:auto;padding:16px">
+  <div style="max-width:560px;margin:24px auto;background:#fff;border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">📋 سجل الطالب</h2>
+      <button class="ghost" style="padding:6px 12px" onclick="closeStudentRecord()">✕ إغلاق</button>
+    </div>
+    <div id="stRecordBody"></div>
+  </div>
+</div>
 
 <!-- Firebase (compat) — يُربط بمشروعك نفسه -->
 <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
@@ -1236,15 +1251,22 @@ function addClass(){
   const code=(document.getElementById('clCode').value||'').trim();
   if(!name){ alert('أدخل اسم الصف.'); return; }
   if(!code){ alert('أدخل رمز الصف.'); return; }
-  if(state.classes.some(c=>c.code===code)){ alert('رمز الصف مستخدم من قبل.'); return; }
+  if(state.classes.some(c=>c.code===code)){ alert('رمز الصف مستخدم من قبل. اختر رمزاً غير متكرر.'); return; }
+  if(state.classes.some(c=>c.name===name)){ alert('اسم الصف مستخدم من قبل. اختر اسماً غير متكرر.'); return; }
   state.classes.push({ name, code });
   document.getElementById('clName').value=''; document.getElementById('clCode').value='';
   refreshClassDropdowns(); renderClasses(); renderStudents(); saveStudentsToCloud();
 }
 function delClass(code){
-  const n = state.students.filter(s=>s.classCode===code).length;
-  if(n>0){ if(!confirm(`هذا الصف يحوي ${toArabic(n)} طالباً. حذف الصف لن يحذف طلابه لكن سيُلغي ربطهم. متابعة؟`)) return; }
-  else if(!confirm('حذف هذا الصف؟')) return;
+  const studs = state.students.filter(s=>s.classCode===code);
+  const cl = state.classes.find(c=>c.code===code);
+  const msg = studs.length>0
+    ? `حذف الصف «${cl?cl.name:code}» سيحذف أيضاً ${toArabic(studs.length)} طالباً مرتبطين به نهائياً. متابعة؟`
+    : `حذف الصف «${cl?cl.name:code}»؟`;
+  if(!confirm(msg)) return;
+  // حذف طلاب الصف وبياناتهم المرتبطة
+  studs.forEach(s=>{ delete state.attendance[s.seat]; delete state.selectedStudents[s.seat]; });
+  state.students = state.students.filter(s=>s.classCode!==code);
   state.classes = state.classes.filter(c=>c.code!==code);
   refreshClassDropdowns(); renderClasses(); renderStudents(); saveStudentsToCloud();
 }
@@ -1266,6 +1288,7 @@ function refreshClassDropdowns(){
   set('stImportClass','<option value="">— اختر الصف أولاً —</option>');
   set('stViewClass','<option value="">— كل الفصول —</option>');
   set('cfgClassSel','<option value="">— اختر الصف —</option>');
+  set('wlViewClass','<option value="">— اختر الصف —</option>');
 }
 
 /* ---- الطلاب ---- */
@@ -1380,27 +1403,32 @@ function renderStudents(){
   if(!state.classes.length){ host.innerHTML='<div class="empty">أضف فصلاً أولاً، ثم سجّل الطلاب.</div>'; updateBulkBar(); return; }
   if(!list.length){ host.innerHTML='<div class="empty">لا يوجد طلاب في هذا العرض.</div>'; updateBulkBar(); return; }
   const attBg = { present:'#e7f7ee', late:'#fff4e0', absent:'#fdecec' };
+  const attLbl = { present:'حاضر', late:'متأخر', absent:'غائب' };
   let html='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="min-width:520px"><thead><tr><th></th><th>#</th><th>رقم الهوية</th><th>اسم الطالب</th><th>الصف</th><th></th></tr></thead><tbody>';
   list.forEach((s,i)=>{
     const chk = state.selectedStudents[s.seat] ? 'checked':'';
-    const att = state.attendance[s.seat];
-    const rowBg = att ? `background:${attBg[att]}` : '';
+    const att = state.attendance[s.seat];               // {status,note,ts} أو undefined
+    const rowBg = att ? `background:${attBg[att.status]}` : '';
     const menuOpen = state.attMenuSeat===s.seat;
     let idCell;
     if(menuOpen){
-      idCell = `<div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">
-        <button class="ghost" style="padding:5px 8px;font-size:11px;background:#e7f7ee;color:var(--ok)" onclick="setAttendance('${escapeHtml(s.seat)}','present')">حاضر</button>
-        <button class="ghost" style="padding:5px 8px;font-size:11px;background:#fff4e0;color:var(--warn)" onclick="setAttendance('${escapeHtml(s.seat)}','late')">متأخر</button>
-        <button class="ghost" style="padding:5px 8px;font-size:11px;background:#fdecec;color:var(--bad)" onclick="setAttendance('${escapeHtml(s.seat)}','absent')">غائب</button>
+      idCell = `<div style="display:flex;flex-direction:column;gap:5px;min-width:200px">
+        <div style="display:flex;gap:4px;justify-content:center">
+          <button class="ghost" style="padding:5px 8px;font-size:11px;background:#e7f7ee;color:var(--ok)" onclick="setAttendance('${escapeHtml(s.seat)}','present')">حاضر</button>
+          <button class="ghost" style="padding:5px 8px;font-size:11px;background:#fff4e0;color:var(--warn)" onclick="setAttendance('${escapeHtml(s.seat)}','late')">متأخر</button>
+          <button class="ghost" style="padding:5px 8px;font-size:11px;background:#fdecec;color:var(--bad)" onclick="setAttendance('${escapeHtml(s.seat)}','absent')">غائب</button>
+        </div>
+        <input id="attNote" placeholder="ملاحظة (اختياري)" value="${escapeHtml(att&&att.note||'')}" style="padding:6px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px;text-align:right">
       </div>`;
     } else {
-      idCell = `<span style="font-weight:700;cursor:pointer;border-bottom:1px dotted var(--muted)" onclick="openAttMenu('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span>`;
+      const badge = att ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">${attLbl[att.status]}${att.note?' • '+escapeHtml(att.note):''}</div>` : '';
+      idCell = `<span style="font-weight:700;cursor:pointer;border-bottom:1px dotted var(--muted)" onclick="openAttMenu('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span>${badge}`;
     }
     html += `<tr style="${rowBg}">
       <td><input type="checkbox" ${chk} style="width:18px;height:18px" onchange="toggleSelStudent('${escapeHtml(s.seat)}',this.checked)"></td>
       <td>${i+1}</td>
       <td>${idCell}</td>
-      <td style="text-align:right">${escapeHtml(s.name)}</td>
+      <td style="text-align:right"><span style="cursor:pointer;color:var(--teal-d);font-weight:600;text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span></td>
       <td>${escapeHtml(classNameByCode(s.classCode)||s.classCode||'—')}</td>
       <td><button class="ghost" style="padding:6px 8px;color:var(--bad)" onclick="delStudent('${escapeHtml(s.seat)}')">حذف</button></td>
     </tr>`;
@@ -1411,10 +1439,141 @@ function renderStudents(){
 // قائمة الحضور عند الضغط على رقم الهوية
 function openAttMenu(seat){ state.attMenuSeat = (state.attMenuSeat===seat?null:seat); renderStudents(); }
 function setAttendance(seat,status){
-  state.attendance[seat]=status;
-  state.attMenuSeat=null;
+  const noteEl = document.getElementById('attNote');
+  const note = noteEl ? (noteEl.value||'').trim() : '';
+  state.attendance[seat] = { status, note, ts: Date.now() };
+  state.attMenuSeat = null;
   renderStudents();
 }
+
+/* ============================================================
+   سجل الأعمال — الحضور التراكمي ودرجات الفترات
+   ============================================================ */
+function workEntry(classCode, seat){
+  if(!state.workLog[classCode]) state.workLog[classCode] = {};
+  if(!state.workLog[classCode][seat]) state.workLog[classCode][seat] = { events:[], exams:{} };
+  return state.workLog[classCode][seat];
+}
+function todayStr(){ const d=new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`; }
+function countStatus(entry, status){ return (entry.events||[]).filter(e=>e.status===status).length; }
+
+// الحفظ في سجل الأعمال: يسجّل حالة كل طلاب العرض الحالي بتاريخ اليوم (غير المحدَّد = حاضر)
+function commitAttendance(){
+  const filter = document.getElementById('stViewClass') ? document.getElementById('stViewClass').value : '';
+  const list = filter ? state.students.filter(s=>s.classCode===filter) : state.students.slice();
+  if(!list.length){ alert('لا يوجد طلاب لتسجيل حضورهم.'); return; }
+  const date = todayStr(), ts = Date.now();
+  let nAbs=0, nLate=0, nPres=0;
+  list.forEach(s=>{
+    const att = state.attendance[s.seat];
+    const status = att ? att.status : 'present';        // غير المحدَّد = حاضر
+    const note = att ? (att.note||'') : '';
+    const entry = workEntry(s.classCode, s.seat);
+    entry.events.push({ date, ts, status, note });
+    if(status==='absent') nAbs++; else if(status==='late') nLate++; else nPres++;
+  });
+  // تصفير الحالة اللحظية لطلاب هذا العرض بعد الحفظ
+  list.forEach(s=>{ delete state.attendance[s.seat]; });
+  renderStudents();
+  renderWorkLog();
+  saveWorkLogToCloud();
+  alert(`تم التسجيل في سجل الأعمال بتاريخ ${date}:\nحاضر ${toArabic(nPres)} · متأخر ${toArabic(nLate)} · غائب ${toArabic(nAbs)}`);
+}
+
+// تصفير الحالة اللحظية بعد ٩٠ دقيقة
+function purgeStaleAttendance(){
+  const now = Date.now(), MAX = 90*60*1000;
+  let changed=false;
+  for(const seat in state.attendance){
+    if(now - (state.attendance[seat].ts||0) > MAX){ delete state.attendance[seat]; changed=true; }
+  }
+  if(changed) renderStudents();
+}
+setInterval(purgeStaleAttendance, 60*1000);
+
+// إرسال درجات اختبار فترة إلى سجل الأعمال (يُستدعى من «حفظ الدرجات» في النتائج)
+function pushExamGradesToWorkLog(periodLabel, rows){
+  rows.forEach(r=>{
+    const st = findStudent(r.seat||'');
+    if(!st) return;
+    const entry = workEntry(st.classCode, st.seat);
+    entry.exams[periodLabel] = `${r.correct}/${r.total}`;
+  });
+  saveWorkLogToCloud();
+}
+
+async function saveWorkLogToCloud(){
+  if(!cloudReady) return;
+  try{ await cloudSet('results','worklog', state.workLog); }catch(e){}
+}
+async function loadWorkLog(manual){
+  if(!cloudReady){ if(manual) alert('قاعدة البيانات غير مهيّأة.'); return; }
+  try{
+    const data = await cloudGet('results','worklog');
+    state.workLog = (data && typeof data==='object') ? data : {};
+    renderWorkLog();
+    if(manual) setCloudStatus('ok','✅ حُمّل سجل الأعمال.');
+  }catch(e){ if(manual) alert('فشل التحميل: '+e.message); }
+}
+// جدول سجل الأعمال لصفّ واحد: الهوية، الاسم، أيام الغياب، أيام التأخر، أعمدة الفترات، ملاحظات
+function renderWorkLog(){
+  const host = document.getElementById('workLogHost'); if(!host) return;
+  const sel = document.getElementById('wlViewClass');
+  const code = sel ? sel.value : '';
+  if(!code){ host.innerHTML='<div class="empty">اختر صفاً لعرض سجل أعماله.</div>'; return; }
+  const studs = state.students.filter(s=>s.classCode===code);
+  if(!studs.length){ host.innerHTML='<div class="empty">لا يوجد طلاب في هذا الصف.</div>'; return; }
+  const log = state.workLog[code]||{};
+  // أعمدة الفترات: اتحاد كل أسماء الاختبارات المسجّلة لطلاب الصف
+  const periods = [];
+  studs.forEach(s=>{ const e=log[s.seat]; if(e&&e.exams) Object.keys(e.exams).forEach(k=>{ if(!periods.includes(k)) periods.push(k); }); });
+  let html='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="min-width:'+(560+periods.length*90)+'px"><thead><tr>'
+    +'<th>رقم الهوية</th><th>اسم الطالب</th><th>أيام الغياب</th><th>أيام التأخر</th>'
+    + periods.map(p=>`<th>${escapeHtml(p)}</th>`).join('')
+    +'<th>ملاحظات</th></tr></thead><tbody>';
+  studs.forEach(s=>{
+    const e = log[s.seat] || { events:[], exams:{} };
+    const abs = countStatus(e,'absent'), late = countStatus(e,'late');
+    const lastNotes = (e.events||[]).filter(x=>x.note).slice(-1).map(x=>x.note).join(' / ');
+    html += `<tr>
+      <td style="font-weight:700"><span style="cursor:pointer;color:var(--teal-d);text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span></td>
+      <td style="text-align:right"><span style="cursor:pointer;color:var(--teal-d);font-weight:600;text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span></td>
+      <td style="color:${abs?'var(--bad)':'inherit'};font-weight:700">${toArabic(abs)}</td>
+      <td style="color:${late?'var(--warn)':'inherit'};font-weight:700">${toArabic(late)}</td>
+      ${periods.map(p=>`<td style="font-weight:700">${escapeHtml(e.exams[p]||'—')}</td>`).join('')}
+      <td style="font-size:11px;color:var(--muted);text-align:right">${escapeHtml(lastNotes||'—')}</td>
+    </tr>`;
+  });
+  host.innerHTML = html+'</tbody></table></div>';
+}
+
+// نافذة سجل الطالب: تواريخ الغياب/التأخر/الحضور وملاحظاتها
+function openStudentRecord(seat){
+  const s = findStudent(seat); if(!s) return;
+  const entry = (state.workLog[s.classCode] && state.workLog[s.classCode][seat]) || { events:[], exams:{} };
+  const byStatus = (st)=> entry.events.filter(e=>e.status===st);
+  const section = (title, color, items)=>{
+    let h = `<div style="margin-top:10px;font-weight:700;color:${color}">${title} (${toArabic(items.length)})</div>`;
+    if(!items.length) h += `<div style="font-size:12px;color:var(--muted)">لا يوجد</div>`;
+    else h += '<div style="margin-top:4px">'+items.map(e=>`<div style="font-size:12px;padding:5px 8px;background:#f7faf9;border-radius:7px;margin-bottom:4px;text-align:right">📅 ${escapeHtml(e.date)}${e.note?` — <span style="color:var(--muted)">${escapeHtml(e.note)}</span>`:''}</div>`).join('')+'</div>';
+    return h;
+  };
+  let examsHtml = '';
+  const exKeys = Object.keys(entry.exams||{});
+  if(exKeys.length){
+    examsHtml = `<div style="margin-top:10px;font-weight:700;color:var(--teal-d)">درجات الاختبارات</div>`+
+      exKeys.map(k=>`<div style="font-size:12px;padding:5px 8px;background:#eef6f4;border-radius:7px;margin-bottom:4px;text-align:right">${escapeHtml(k)}: <b>${escapeHtml(entry.exams[k])}</b></div>`).join('');
+  }
+  const body = document.getElementById('stRecordBody');
+  body.innerHTML = `<div style="text-align:right;font-weight:800;font-size:16px">${escapeHtml(s.name)}</div>
+    <div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:6px">رقم الهوية: ${escapeHtml(seat)} · الصف: ${escapeHtml(classNameByCode(s.classCode)||'—')}</div>
+    ${section('🔴 الغيابات','var(--bad)', byStatus('absent'))}
+    ${section('🟠 التأخّرات','var(--warn)', byStatus('late'))}
+    ${section('🟢 الحضور','var(--ok)', byStatus('present'))}
+    ${examsHtml}`;
+  document.getElementById('stRecordOverlay').style.display='block';
+}
+function closeStudentRecord(){ document.getElementById('stRecordOverlay').style.display='none'; }
 
 // طباعة نسخة مخصّصة لكل طالب (كل واحدة في صفحة مستقلة) مع باركود QR
 function printAllStudents(){
@@ -2162,7 +2321,10 @@ const firebaseConfig = {
 };
 let db = null, cloudReady = false;
 state.exams = [];
-state.savedRecords = [];   // سجلات النتائج المحفوظة (حسب الصف)
+state.savedRecords = [];   // (قديم) سجلات النتائج المجمّعة
+// سجل الأعمال: مرتبط برمز الصف
+//  workLog[classCode][seat] = { events:[{date,ts,status,note}], exams:{ '<اسم الفترة>': '<درجة>' } }
+state.workLog = {};
 
 function setCloudStatus(kind, msg){
   const el = document.getElementById('cloudStatus');
@@ -2189,6 +2351,7 @@ function initFirebase(){
     loadResultsFromCloud();
     loadStudentsFromCloud();
     loadSavedRecords();
+    loadWorkLog();
   }catch(e){
     setCloudStatus('err','خطأ في الاتصال: '+e.message);
   }
@@ -2256,23 +2419,21 @@ function renderExams(){
 function saveGradesToRecord(){
   if(!state.results.length){ alert('لا توجد نتائج لحفظها. صحّح بطاقات أولاً.'); return; }
   readCfg();
-  const def = (state.cfg.subject||'') + (state.cfg.className?(' — '+state.cfg.className):'') ;
-  const title = prompt('اسم سجل الدرجات:', def.trim()||'سجل درجات');
-  if(title===null) return;
-  // إثراء كل صفّ باسم صفّه (من قاعدة الطلاب عبر رقم الهوية)
-  const rows = state.results.map(r=>{
-    const st = findStudent(r.seat||'');
-    return {
-      seat: r.seat||'', name: r.name||'', 
-      className: st ? (classNameByCode(st.classCode)||st.classCode||'') : (r.grade||'غير محدد'),
-      correct: r.correct, total: r.total, wrong: r.wrong, blank: r.blank, at: r.at||''
-    };
-  });
-  const rec = { id:'r'+Date.now().toString(36), title:(title.trim()||'سجل درجات'), savedAt:new Date().toLocaleString('ar-SA'), rows };
-  state.savedRecords.push(rec);
-  renderSavedRecords();
-  saveRecordsToCloud();
-  alert(`تم حفظ ${toArabic(rows.length)} نتيجة في «الحفظ» مجمّعةً حسب الصف.`);
+  // اسم عمود الفترة في سجل الأعمال = ما كُتب في «الفترة» عند التصميم
+  const period = (state.cfg.period||'').trim();
+  const def = 'اختبار الفترة ' + (period||'');
+  const label = prompt('اسم عمود الاختبار في سجل الأعمال:', def.trim()||'اختبار');
+  if(label===null) return;
+  const periodLabel = label.trim() || def.trim() || 'اختبار';
+  // إرسال درجة كل طالب (مطابقة برقم الهوية) إلى سجل الأعمال تحت اسم الفترة
+  const rows = state.results.map(r=>({ seat:r.seat||'', name:r.name||'', correct:r.correct, total:r.total }));
+  let matched=0, unmatched=0;
+  rows.forEach(r=>{ if(findStudent(r.seat)) matched++; else unmatched++; });
+  pushExamGradesToWorkLog(periodLabel, rows);
+  renderWorkLog();
+  let msg = `تم إرسال درجات «${periodLabel}» إلى سجل الأعمال.\nطُوبق ${toArabic(matched)} طالباً`;
+  if(unmatched) msg += ` · ${toArabic(unmatched)} غير مسجّل في قاعدة الطلاب`;
+  alert(msg);
   showTab('cloud');
 }
 function delRecord(id){
