@@ -121,17 +121,17 @@
   <h1>نظام التصحيح الآلي لبطاقات الإجابة</h1>
   <p>تصميم النماذج وتصحيحها بالكاميرا أو الماسح الضوئي</p>
   <nav class="tabs">
-    <button id="tab-design" class="active" onclick="showTab('design')">🖨️ التصميم</button>
-    <button id="tab-students" onclick="showTab('students')">👥 الطلاب</button>
+    <button id="tab-students" class="active" onclick="showTab('students')">👥 الطلاب والفصول</button>
+    <button id="tab-design" onclick="showTab('design')">🖨️ التصميم</button>
     <button id="tab-grade" onclick="showTab('grade')">📷 التصحيح</button>
     <button id="tab-results" onclick="showTab('results')">📊 النتائج</button>
-    <button id="tab-cloud" onclick="showTab('cloud')">☁️ الحفظ</button>
+    <button id="tab-cloud" onclick="showTab('cloud')">💾 الحفظ</button>
   </nav>
 </header>
 
 <main>
   <!-- ================= DESIGN ================= -->
-  <section id="panel-design" class="panel active">
+  <section id="panel-design" class="panel">
     <div class="card no-print">
       <h2>إعدادات النموذج <span class="sub">صمّم بطاقة الإجابة ثم اطبعها</span></h2>
       <div style="font-size:13px;font-weight:700;color:var(--teal-d);margin-bottom:8px">🏛️ بيانات الترويسة الرسمية</div>
@@ -149,7 +149,7 @@
           <input id="cfgSubject" value="تقنية رقمية">
         </label>
         <label class="field">الصف
-          <input id="cfgClassName" value="101">
+          <select id="cfgClassSel" onchange="renderSheet()"><option value="">— اختر الصف —</option></select>
         </label>
         <label class="field">الفترة
           <input id="cfgPeriod" value="الثانية">
@@ -193,44 +193,100 @@
     <div class="card">
       <h2 class="no-print">معاينة البطاقة</h2>
       <div id="sheetHost"></div>
-      <button class="ghost no-print" style="margin-top:12px" onclick="window.print()">🖨️ طباعة البطاقة (نموذج فارغ)</button>
+      <button id="writeQBtn" class="primary no-print" style="margin-top:12px;display:none" onclick="openQEditor()">✍️ كتابة الأسئلة والمعاينة</button>
+      <button class="ghost no-print" style="margin-top:10px" onclick="window.print()">🖨️ طباعة البطاقة (نموذج فارغ)</button>
+      <button id="saveExamBtn" class="primary no-print" style="margin-top:10px;display:none;background:#0b7a63" onclick="saveCurrentExam()">💾 حفظ الاختبار</button>
       <button id="printPerStudentBtn" class="primary no-print" style="margin-top:10px;display:none" onclick="printAllStudents()">🖨️ طباعة نسخة لكل طالب (بالباركود)</button>
+      <div id="examLogWrap" class="no-print" style="display:none;margin-top:16px">
+        <h2 style="font-size:15px">📋 سجل الاختبارات <span class="sub">اضغط اختباراً لفتحه وتعديله</span></h2>
+        <div id="examLogHost"><div class="empty">لا توجد اختبارات محفوظة بعد.</div></div>
+      </div>
     </div>
   </section>
 
+  <!-- محرّر الأسئلة (نافذة منبثقة) -->
+  <div id="qEditorOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,30,28,.55);z-index:9999;overflow-y:auto;padding:16px">
+    <div style="max-width:760px;margin:20px auto;background:#fff;border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <h2 style="margin:0">✍️ كتابة الأسئلة</h2>
+        <button class="ghost" style="padding:6px 12px" onclick="closeQEditor()">✕ إغلاق</button>
+      </div>
+      <p class="hint" style="margin-top:0">اكتب نص كل سؤال وخياراته حسب الأقسام المحدّدة. تُطبع على بطاقة الأسئلة وتُحفظ مع الاختبار.</p>
+      <div id="qEditorBody"></div>
+      <div class="row" style="margin-top:14px;position:sticky;bottom:0;background:#fff;padding-top:10px">
+        <button class="primary" style="flex:2" onclick="applyQEditor()">✅ حفظ ومعاينة</button>
+        <button class="ghost" onclick="clearQData()">🗑️ تفريغ الأسئلة</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ================= STUDENTS ================= -->
-  <section id="panel-students" class="panel">
+  <section id="panel-students" class="panel active">
+    <!-- ===== الفصول ===== -->
     <div class="card">
-      <h2>قائمة الطلاب <span class="sub">الاسم + رقم الجلوس لكل طالب</span></h2>
-      <p class="hint" style="margin-top:0">عند التصحيح يُقرأ باركود الطالب فيُطابَق رقم الجلوس مع هذه القائمة، فيُربط الاسم والدرجة تلقائياً. تُحفظ القائمة سحابياً مع اختباراتك.</p>
+      <h2>الفصول <span class="sub">أضف الفصول أولاً قبل تسجيل الطلاب</span></h2>
+      <div class="row" style="margin-bottom:10px">
+        <label class="field" style="flex:2">اسم الصف
+          <input id="clName" placeholder="مثال: أول ثانوي / 1">
+        </label>
+        <label class="field" style="flex:1.2">رمز الصف
+          <input id="clCode" placeholder="مثال: 101">
+        </label>
+      </div>
+      <button class="primary" onclick="addClass()">➕ إضافة الصف</button>
+      <div id="classesHost" style="margin-top:12px"><div class="empty">لا توجد فصول بعد. أضف فصلاً للبدء.</div></div>
+    </div>
+
+    <!-- ===== تسجيل طالب فردي ===== -->
+    <div class="card">
+      <h2>إضافة طالب <span class="sub">تسجيل فردي في قاعدة البيانات الثابتة</span></h2>
       <div class="row" style="margin-bottom:10px">
         <label class="field" style="flex:2">اسم الطالب
           <input id="stName" placeholder="مثال: محمد نجيب حكمي">
         </label>
-        <label class="field" style="flex:1.4">رقم الجلوس
+        <label class="field" style="flex:1.4">رقم الهوية
           <input id="stSeat" inputmode="numeric" placeholder="1061532883">
         </label>
-        <label class="field" style="flex:.8">الصف
-          <input id="stClass" placeholder="101">
+        <label class="field" style="flex:1">الصف
+          <select id="stClassSel"><option value="">— اختر الصف —</option></select>
         </label>
       </div>
       <button class="primary" onclick="addStudentManual()">➕ إضافة الطالب</button>
     </div>
 
+    <!-- ===== استيراد Excel ===== -->
     <div class="card">
-      <h2>استيراد دفعة <span class="sub">لصق من Excel أو كتابة سطر لكل طالب</span></h2>
-      <p class="hint" style="margin-top:0">سطر لكل طالب بالصيغة: <b>رقم الجلوس , الاسم , الصف</b> — مثال:<br>1061532883 , محمد نجيب حكمي , 101</p>
-      <textarea id="stBulk" rows="5" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;font-weight:600;color:var(--ink);background:#fcfdfd" placeholder="1061532883 , محمد نجيب حكمي , 101&#10;1061532884 , أحمد علي , 101"></textarea>
-      <button class="primary" style="margin-top:10px" onclick="importStudents()">⬆️ استيراد القائمة</button>
+      <h2>استيراد من Excel <span class="sub">دفعة طلاب لصفٍّ محدّد</span></h2>
+      <label class="field">الصف الذي ستُضاف إليه الدفعة
+        <select id="stImportClass"><option value="">— اختر الصف أولاً —</option></select>
+      </label>
+      <p class="hint" style="margin-top:6px;color:#d32f2f;font-weight:600">ملاحظة مهمة: في ملف Excel ضع <b>رقم الهوية في العمود A</b> و<b>اسم الطالب في العمود B</b>. لا يتم الاستيراد إلا بعد تحديد الصف.</p>
+      <input id="xlsxFile" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onXlsxChosen(event)">
+      <button class="ghost" onclick="document.getElementById('xlsxFile').click()">📂 اختيار ملف Excel/CSV</button>
+      <div style="margin:12px 0 6px;font-size:12px;color:var(--muted)">أو الصق الصفوف يدوياً (رقم الهوية ثم الاسم، سطر لكل طالب):</div>
+      <textarea id="stBulk" rows="4" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;font-weight:600;color:var(--ink);background:#fcfdfd" placeholder="1061532883&#9;محمد نجيب حكمي&#10;1061532884&#9;أحمد علي"></textarea>
+      <button class="primary" style="margin-top:10px" onclick="importStudents()">⬆️ استيراد للصف المحدّد</button>
     </div>
 
+    <!-- ===== عرض الطلاب حسب الصف ===== -->
     <div class="card">
-      <h2>الطلاب المسجّلون <span class="sub" id="stCount">٠ طالب</span></h2>
-      <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد. أضف طالباً أو استورد دفعة.</div></div>
+      <h2>طلاب الصف <span class="sub" id="stCount">٠ طالب</span></h2>
+      <label class="field">اعرض طلاب الصف
+        <select id="stViewClass" onchange="renderStudents()"><option value="">— كل الفصول —</option></select>
+      </label>
+      <div id="bulkActionsBar" style="display:none;margin:10px 0;padding:10px;background:#eef6f4;border:1px solid var(--teal-l);border-radius:10px">
+        <span id="selCount" style="font-weight:700;color:var(--teal-d)">٠ محدّد</span>
+        <div class="row" style="margin-top:8px">
+          <button class="ghost" onclick="bulkMove()">↔️ نقل الطلاب</button>
+          <button class="ghost" onclick="bulkNote('مرشد')">📨 ملاحظة للمرشد</button>
+          <button class="ghost" onclick="bulkNote('وكيل')">📨 ملاحظة للوكيل</button>
+          <button class="ghost" onclick="bulkNote('custom')">📝 كتابة ملاحظة</button>
+        </div>
+      </div>
+      <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد.</div></div>
       <div class="row" style="margin-top:12px">
         <button class="ghost" onclick="saveStudentsToCloud(true)">⬆️ حفظ سحابياً</button>
         <button class="ghost" onclick="loadStudentsFromCloud(true)">⬇️ تحميل</button>
-        <button class="ghost" style="color:var(--bad)" onclick="clearStudents()">🗑️ مسح الكل</button>
       </div>
     </div>
   </section>
@@ -305,40 +361,22 @@
     <div class="card">
       <h2>سجل النتائج <span class="sub" id="resCount">٠ بطاقة</span></h2>
       <div id="resultsTableHost"><div class="empty">لا توجد نتائج محفوظة بعد.<br>صحّح بطاقة ثم احفظها لتظهر هنا.</div></div>
-      <button class="ghost no-print" style="margin-top:12px" onclick="exportCSV()">⬇️ تصدير Excel/CSV</button>
+      <div class="row no-print" style="margin-top:12px">
+        <button class="ghost" onclick="exportCSV()">⬇️ تصدير Excel/CSV</button>
+        <button class="primary" style="background:#0b7a63" onclick="saveGradesToRecord()">💾 حفظ الدرجات</button>
+      </div>
+      <p class="hint" style="margin-top:8px">«حفظ الدرجات» يحفظ هذه النتائج في تبويب «الحفظ» مجمّعةً حسب الصف.</p>
     </div>
   </section>
 
-  <!-- ================= CLOUD ================= -->
+  <!-- ================= الحفظ = سجل النتائج ================= -->
   <section id="panel-cloud" class="panel">
     <div class="card">
-      <h2>الاتصال بقاعدة البيانات <span class="sub">Firestore</span></h2>
-      <div id="cloudStatus" class="status info">جارٍ التهيئة…</div>
-      <p class="hint">مشروع مستقل بقاعدة بياناته الخاصة. الاختبارات تُحفظ في مجموعة <b>exams</b> والنتائج في مجموعة <b>results</b> — منفصلة تماماً عن نظام الفندق.</p>
-    </div>
-
-    <div class="card">
-      <h2>حفظ الاختبار الحالي <span class="sub">الإعدادات + مفتاح الإجابة</span></h2>
-      <label class="field">اسم الاختبار
-        <input id="examName" placeholder="مثال: رياضيات — الفترة الأولى">
-      </label>
-      <button class="primary" onclick="saveExam()">💾 حفظ الاختبار سحابياً</button>
-      <p class="hint">يحفظ شكل الورقة والأقسام وأنواع الأسئلة ومفتاح الإجابة كاملاً، فتستدعيه لاحقاً دون إعادة إدخال.</p>
-    </div>
-
-    <div class="card">
-      <h2>الاختبارات المحفوظة <span class="sub" id="examCount">٠</span></h2>
-      <div id="examsHost"><div class="empty">لا توجد اختبارات محفوظة بعد.</div></div>
-      <button class="ghost no-print" style="margin-top:10px" onclick="loadExamsFromCloud()">🔄 تحديث القائمة</button>
-    </div>
-
-    <div class="card">
-      <h2>مزامنة النتائج</h2>
-      <p class="hint" id="resultsSyncInfo">تُحفظ النتائج سحابياً تلقائياً عند كل تصحيح.</p>
-      <div class="row">
-        <button class="ghost" onclick="saveResultsToCloud(true)">⬆️ حفظ النتائج الآن</button>
-        <button class="ghost" onclick="loadResultsFromCloud(true)">⬇️ تحميل النتائج</button>
-      </div>
+      <h2>سجل النتائج المحفوظة <span class="sub" id="recCount">٠ سجل</span></h2>
+      <div id="cloudStatus" class="status info" style="margin-bottom:10px">جارٍ التهيئة…</div>
+      <p class="hint" style="margin-top:0">عند الضغط على «حفظ الدرجات» في تبويب النتائج تُحفظ النتائج هنا مجمّعةً حسب الصف. تُخزَّن سحابياً تلقائياً.</p>
+      <div id="savedRecordsHost"><div class="empty">لا توجد سجلات محفوظة بعد.</div></div>
+      <button class="ghost no-print" style="margin-top:10px" onclick="loadSavedRecords(true)">🔄 تحديث السجلات</button>
     </div>
   </section>
 </main>
@@ -350,6 +388,8 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <!-- قارئ رمز QR موثوق (لفكّ الباركود أثناء التصحيح) -->
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<!-- قراءة ملفات Excel (استيراد الطلاب) -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <!-- محرّك OpenCV.js — المسار الرسمي الصحيح (~8م.ب، يُحمّل مرة ثم يُحفظ مؤقتاً) -->
 <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onCvReady()" onerror="onCvError()"></script>
 <script>
@@ -375,7 +415,11 @@ const state = {
   meta:[],           // مصفوفة مشتقّة: نوع وخيارات كل سؤال
   key:[],            // مفتاح الإجابة: قيمة كل سؤال = رقم الخيار أو null
   results:[],
-  students:[],       // قائمة الطلاب: {seat, name, klass}
+  students:[],       // قائمة الطلاب: {seat, name, classCode}
+  classes:[],        // الفصول: {name, code}
+  selectedStudents:{}, // خانات الاختيار المؤقتة
+  qData:[],          // نصوص الأسئلة وخياراتها (للشكل الأفقي): [{text, options:[]}]
+  editingExamId:null, // معرّف الاختبار قيد التعديل (إن وُجد)
   cvReady:false,
   corners:[],
   imgLoaded:false,
@@ -603,7 +647,9 @@ function readCfg(){
   state.cfg.sub    = g('cfgSub').value;
   state.cfg.school = g('cfgSchool') ? g('cfgSchool').value : '';
   state.cfg.subject = g('cfgSubject') ? g('cfgSubject').value : '';
-  state.cfg.className = g('cfgClassName') ? g('cfgClassName').value : '';
+  const clSel = g('cfgClassSel');
+  if(clSel){ state.cfg.classCode = clSel.value; state.cfg.className = classNameByCode(clSel.value) || clSel.value; }
+  else state.cfg.className = g('cfgClassName') ? g('cfgClassName').value : '';
   state.cfg.period = g('cfgPeriod') ? g('cfgPeriod').value : '';
   state.cfg.perCol = Math.max(5, Math.min(40, +g('cfgPerCol').value||20));
   state.cfg.idEnabled = g('cfgIdEnabled').checked;
@@ -732,8 +778,17 @@ function updateSection(i,field,val){
     s.type = val;
     if(val==='mcq' && !s.opts) s.opts = 4;
   } else {
-    s[field] = +val;
+    if(field==='count'){
+      let v = Math.max(1, +val||1);
+      // حدّ المجموع الكلي 40 سؤالاً لكل الأقسام
+      const others = state.cfg.sections.reduce((a,sec,idx)=> a + (idx===i?0:(sec.count||0)), 0);
+      if(others + v > 40){ v = Math.max(1, 40 - others); alert('الحد الأقصى ٤٠ سؤالاً لمجموع كل الأقسام.'); }
+      s.count = v;
+    } else {
+      s[field] = +val;
+    }
   }
+  sanitizeSections();
   renderSections();
 }
 
@@ -992,14 +1047,39 @@ function buildQASheet(L, student){
     svg += qaBanner(blk.qBanner, 'start');
     svg += qaBanner(blk.aBanner, 'start');
   }
-  // أسئلة (يمين): رقم + سطر فارغ للنص المتغيّر
+  // أسئلة (يمين): النص المكتوب إن وُجد، وإلا سطر فارغ
+  const qd = state.qData||[];
   for(const q of L.questions){
     svg += `<text x="${q.qNumX}" y="${q.cy+5}" direction="rtl" text-anchor="start" font-size="14" font-weight="bold" fill="#15242b">${toArabic(q.local)}</text>`;
-    if(q.tf){
-      svg += `<text x="${q.qLineLeft}" y="${q.cy+6}" font-size="16" fill="#15242b">( &#160;&#160;&#160; )</text>`;
-      svg += dotted(q.qLineLeft+58, q.qNumX-30, q.cy+6);
+    const data = qd[q.q];
+    const hasText = data && (data.text || (data.options && data.options.some(o=>o)));
+    const lineRight = q.qNumX - 26;          // يبدأ النص يسار الرقم
+    const lineLeft  = q.qLineLeft;
+    const availW = lineRight - lineLeft;
+    if(hasText){
+      // يبني نص السؤال كاملاً مع خياراته (مثل النماذج الرسمية)
+      let full = data.text||'';
+      if(!q.tf && data.options && data.options.length){
+        const parts = data.options.map((o,oi)=> o ? `${Q_LETTERS_AR[oi]}- ${o}` : '').filter(Boolean);
+        if(parts.length) full += '  ( ' + parts.join('   ') + ' )';
+      }
+      const fontSz = 12;
+      const lines = wrapRTL(full, availW, fontSz);
+      const maxLines = Math.max(1, Math.floor((L.rowH-4)/(fontSz+3)));
+      const shown = lines.slice(0, maxLines);
+      if(lines.length>maxLines) shown[shown.length-1] += '…';
+      const totalH = shown.length*(fontSz+3);
+      let ty = q.cy - totalH/2 + fontSz;
+      for(const ln of shown){
+        svg += `<text x="${lineRight}" y="${ty}" direction="rtl" text-anchor="start" font-size="${fontSz}" fill="#15242b">${escapeXml(ln)}</text>`;
+        ty += fontSz+3;
+      }
+      if(q.tf) svg += `<text x="${lineLeft}" y="${q.cy+5}" font-size="15" fill="#15242b">(&#160;&#160;&#160;)</text>`;
+    } else if(q.tf){
+      svg += `<text x="${lineLeft}" y="${q.cy+6}" font-size="16" fill="#15242b">( &#160;&#160;&#160; )</text>`;
+      svg += dotted(lineLeft+58, lineRight, q.cy+6);
     } else {
-      svg += dotted(q.qLineLeft, q.qNumX-30, q.cy+6);
+      svg += dotted(lineLeft, lineRight, q.cy+6);
     }
   }
   // إجابات (يسار): رقم + دوائر
@@ -1013,6 +1093,18 @@ function buildQASheet(L, student){
   }
   svg += `</svg>`;
   return svg;
+}
+// التفاف نص عربي على عدّة أسطر بحسب العرض المتاح
+function wrapRTL(text, maxW, fontSz){
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines=[]; let cur='';
+  for(const w of words){
+    const test = cur ? cur+' '+w : w;
+    if(measureTextW(test, fontSz, 'normal') <= maxW || !cur){ cur = test; }
+    else { lines.push(cur); cur = w; }
+  }
+  if(cur) lines.push(cur);
+  return lines.length?lines:[''];
 }
 
 function onSheetTypeChange(){
@@ -1073,6 +1165,11 @@ function renderSheet(){
   // زر طباعة نسخة لكل طالب يظهر فقط في وضع الاستيراد (باركود)
   const pbtn = document.getElementById('printPerStudentBtn');
   if(pbtn) pbtn.style.display = (state.cfg.idMode==='import') ? 'block' : 'none';
+  // أزرار خاصة بالشكل الأفقي: كتابة الأسئلة + حفظ الاختبار + سجل الاختبارات
+  const isQAnow = (type==='qa');
+  const wb = document.getElementById('writeQBtn'); if(wb) wb.style.display = isQAnow?'block':'none';
+  const sb = document.getElementById('saveExamBtn'); if(sb) sb.style.display = isQAnow?'block':'none';
+  const elw = document.getElementById('examLogWrap'); if(elw){ elw.style.display = isQAnow?'block':'none'; if(isQAnow) renderExamLog(); }
   // اتجاه الطباعة: أفقي لورقة الأسئلة + إجابة، طولي لغيرها
   let po = document.getElementById('printOrient');
   if(!po){ po = document.createElement('style'); po.id='printOrient'; document.head.appendChild(po); }
@@ -1127,71 +1224,174 @@ function autoFillKeyDemo(){
 }
 
 /* ============================================================
-   إدارة الطلاب + طباعة نسخة لكل طالب (بالباركود)
+   إدارة الفصول والطلاب
    ============================================================ */
 function normalizeSeat(s){ return String(s||'').replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).replace(/\D/g,''); }
 
+/* ---- الفصول ---- */
+function addClass(){
+  const name=(document.getElementById('clName').value||'').trim();
+  const code=(document.getElementById('clCode').value||'').trim();
+  if(!name){ alert('أدخل اسم الصف.'); return; }
+  if(!code){ alert('أدخل رمز الصف.'); return; }
+  if(state.classes.some(c=>c.code===code)){ alert('رمز الصف مستخدم من قبل.'); return; }
+  state.classes.push({ name, code });
+  document.getElementById('clName').value=''; document.getElementById('clCode').value='';
+  refreshClassDropdowns(); renderClasses(); renderStudents(); saveStudentsToCloud();
+}
+function delClass(code){
+  const n = state.students.filter(s=>s.classCode===code).length;
+  if(n>0){ if(!confirm(`هذا الصف يحوي ${toArabic(n)} طالباً. حذف الصف لن يحذف طلابه لكن سيُلغي ربطهم. متابعة؟`)) return; }
+  else if(!confirm('حذف هذا الصف؟')) return;
+  state.classes = state.classes.filter(c=>c.code!==code);
+  refreshClassDropdowns(); renderClasses(); renderStudents(); saveStudentsToCloud();
+}
+function classNameByCode(code){ const c=state.classes.find(x=>x.code===code); return c? c.name : ''; }
+function renderClasses(){
+  const host=document.getElementById('classesHost'); if(!host) return;
+  if(!state.classes.length){ host.innerHTML='<div class="empty">لا توجد فصول بعد. أضف فصلاً للبدء.</div>'; return; }
+  let html='<table><thead><tr><th>الصف</th><th>الرمز</th><th>الطلاب</th><th></th></tr></thead><tbody>';
+  state.classes.forEach(c=>{
+    const cnt=state.students.filter(s=>s.classCode===c.code).length;
+    html+=`<tr><td style="text-align:right;font-weight:600">${escapeHtml(c.name)}</td><td style="font-weight:700">${escapeHtml(c.code)}</td><td>${toArabic(cnt)}</td><td><button class="ghost" style="padding:6px 8px;color:var(--bad)" onclick="delClass('${escapeHtml(c.code)}')">حذف</button></td></tr>`;
+  });
+  host.innerHTML=html+'</tbody></table>';
+}
+// تحديث كل القوائم المنسدلة التي تعرض الفصول (الطلاب + التصميم)
+function refreshClassDropdowns(){
+  const opts = state.classes.map(c=>`<option value="${escapeHtml(c.code)}">${escapeHtml(c.name)} (${escapeHtml(c.code)})</option>`).join('');
+  const set=(id,first)=>{ const el=document.getElementById(id); if(!el) return; const cur=el.value; el.innerHTML=first+opts; el.value=cur; };
+  set('stClassSel','<option value="">— اختر الصف —</option>');
+  set('stImportClass','<option value="">— اختر الصف أولاً —</option>');
+  set('stViewClass','<option value="">— كل الفصول —</option>');
+  set('cfgClassSel','<option value="">— اختر الصف —</option>');
+}
+
+/* ---- الطلاب ---- */
 function addStudentManual(){
+  if(!state.classes.length){ alert('أضف فصلاً واحداً على الأقل قبل تسجيل الطلاب.'); return; }
   const name = (document.getElementById('stName').value||'').trim();
   const seat = normalizeSeat(document.getElementById('stSeat').value);
-  const klass = (document.getElementById('stClass').value||'').trim();
-  if(!seat){ alert('أدخل رقم الجلوس.'); return; }
+  const classCode = document.getElementById('stClassSel').value;
+  if(!classCode){ alert('اختر الصف.'); return; }
+  if(!seat){ alert('أدخل رقم الهوية.'); return; }
   if(!name){ alert('أدخل اسم الطالب.'); return; }
-  upsertStudent({ seat, name, klass });
-  document.getElementById('stName').value='';
-  document.getElementById('stSeat').value='';
+  upsertStudent({ seat, name, classCode });
+  document.getElementById('stName').value=''; document.getElementById('stSeat').value='';
   renderStudents(); saveStudentsToCloud();
 }
+// استيراد يدوي (لصق): رقم الهوية ثم الاسم، لصفٍّ محدّد
 function importStudents(){
+  const classCode = document.getElementById('stImportClass').value;
+  if(!classCode){ alert('اختر الصف أولاً قبل الاستيراد.'); return; }
   const txt = document.getElementById('stBulk').value||'';
   const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   let added=0;
   for(const line of lines){
     const parts = line.split(/[,،\t]/).map(p=>p.trim());
     if(parts.length<2) continue;
-    const seat = normalizeSeat(parts[0]);
-    const name = parts[1];
-    const klass = parts[2]||'';
-    if(seat && name){ upsertStudent({ seat, name, klass }); added++; }
+    const seat = normalizeSeat(parts[0]);   // العمود A = رقم الهوية
+    const name = parts[1];                   // العمود B = الاسم
+    if(seat && name){ upsertStudent({ seat, name, classCode }); added++; }
   }
   document.getElementById('stBulk').value='';
   renderStudents(); saveStudentsToCloud();
-  alert(`تم استيراد/تحديث ${toArabic(added)} طالب.`);
+  alert(`تم استيراد/تحديث ${toArabic(added)} طالب في الصف.`);
+}
+// استيراد من ملف Excel/CSV عبر SheetJS — العمود A هوية، العمود B اسم
+function onXlsxChosen(ev){
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value='';
+  if(!file) return;
+  const classCode = document.getElementById('stImportClass').value;
+  if(!classCode){ alert('اختر الصف أولاً قبل اختيار الملف.'); return; }
+  if(typeof XLSX==='undefined'){ alert('مكتبة قراءة Excel لم تُحمّل بعد. تأكد من الإنترنت وأعد المحاولة.'); return; }
+  const reader = new FileReader();
+  reader.onload = (e)=>{
+    try{
+      const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, blankrows:false});
+      let added=0;
+      for(const row of rows){
+        if(!row || row.length<2) continue;
+        const seat = normalizeSeat(row[0]);          // العمود A
+        const name = String(row[1]||'').trim();      // العمود B
+        if(!seat || !name) continue;                 // يتخطّى صف العناوين تلقائياً
+        upsertStudent({ seat, name, classCode }); added++;
+      }
+      renderStudents(); saveStudentsToCloud();
+      alert(`تم استيراد ${toArabic(added)} طالب من الملف إلى الصف.`);
+    }catch(err){ alert('تعذّرت قراءة الملف: '+err.message); }
+  };
+  reader.readAsArrayBuffer(file);
 }
 function upsertStudent(st){
   const i = state.students.findIndex(s=>s.seat===st.seat);
-  if(i>=0) state.students[i] = st; else state.students.push(st);
+  if(i>=0) state.students[i] = { ...state.students[i], ...st }; else state.students.push(st);
 }
 function delStudent(seat){
+  if(!confirm('حذف هذا الطالب؟')) return;
   state.students = state.students.filter(s=>s.seat!==seat);
-  renderStudents(); saveStudentsToCloud();
-}
-function clearStudents(){
-  if(!state.students.length) return;
-  if(!confirm('مسح جميع الطلاب؟')) return;
-  state.students = [];
+  delete state.selectedStudents[seat];
   renderStudents(); saveStudentsToCloud();
 }
 function findStudent(seat){
   const s = normalizeSeat(seat);
   return state.students.find(x=>x.seat===s) || null;
 }
+function toggleSelStudent(seat,checked){
+  if(checked) state.selectedStudents[seat]=true; else delete state.selectedStudents[seat];
+  updateBulkBar();
+}
+function selectedSeats(){ return Object.keys(state.selectedStudents); }
+function updateBulkBar(){
+  const sel=selectedSeats();
+  const bar=document.getElementById('bulkActionsBar');
+  if(bar) bar.style.display = sel.length? 'block':'none';
+  const sc=document.getElementById('selCount');
+  if(sc) sc.textContent = `${toArabic(sel.length)} محدّد`;
+}
+function bulkMove(){
+  const sel=selectedSeats(); if(!sel.length) return;
+  if(!state.classes.length){ alert('لا توجد فصول.'); return; }
+  const list = state.classes.map((c,i)=>`${i+1}) ${c.name} (${c.code})`).join('\n');
+  const ans = prompt(`نقل ${toArabic(sel.length)} طالباً إلى أي صف؟ اكتب رمز الصف:\n\n${list}`);
+  if(ans===null) return;
+  const code = ans.trim();
+  if(!state.classes.some(c=>c.code===code)){ alert('رمز صف غير موجود.'); return; }
+  state.students.forEach(s=>{ if(state.selectedStudents[s.seat]) s.classCode=code; });
+  state.selectedStudents={};
+  renderClasses(); renderStudents(); saveStudentsToCloud();
+  alert('تم نقل الطلاب إلى الصف المحدّد.');
+}
+function bulkNote(kind){
+  const sel=selectedSeats(); if(!sel.length) return;
+  const target = kind==='مرشد'?'المرشد الطلابي' : kind==='وكيل'?'الوكيل' : 'ملاحظة';
+  // ميزة الإرسال تُبرمج لاحقاً — حالياً تأكيد فقط
+  alert(`سيتم إرسال ملاحظة بخصوص ${toArabic(sel.length)} طالب إلى «${target}».\n(هذه الميزة قيد التطوير وستُفعّل لاحقاً.)`);
+}
 function renderStudents(){
-  const host = document.getElementById('studentsHost');
-  document.getElementById('stCount').textContent = `${toArabic(state.students.length)} طالب`;
-  if(!state.students.length){ host.innerHTML='<div class="empty">لا يوجد طلاب بعد. أضف طالباً أو استورد دفعة.</div>'; return; }
-  let html='<table><thead><tr><th>#</th><th>رقم الهوية</th><th>اسم الطالب</th><th>الصف</th><th></th></tr></thead><tbody>';
-  state.students.forEach((s,i)=>{
+  const host = document.getElementById('studentsHost'); if(!host) return;
+  const filter = document.getElementById('stViewClass') ? document.getElementById('stViewClass').value : '';
+  const list = filter ? state.students.filter(s=>s.classCode===filter) : state.students.slice();
+  const cnt = document.getElementById('stCount'); if(cnt) cnt.textContent = `${toArabic(list.length)} طالب`;
+  if(!state.classes.length){ host.innerHTML='<div class="empty">أضف فصلاً أولاً، ثم سجّل الطلاب.</div>'; updateBulkBar(); return; }
+  if(!list.length){ host.innerHTML='<div class="empty">لا يوجد طلاب في هذا العرض.</div>'; updateBulkBar(); return; }
+  let html='<table><thead><tr><th></th><th>#</th><th>رقم الهوية</th><th>اسم الطالب</th><th>الصف</th><th></th></tr></thead><tbody>';
+  list.forEach((s,i)=>{
+    const chk = state.selectedStudents[s.seat] ? 'checked':'';
     html += `<tr>
+      <td><input type="checkbox" ${chk} style="width:18px;height:18px" onchange="toggleSelStudent('${escapeHtml(s.seat)}',this.checked)"></td>
       <td>${i+1}</td>
       <td style="font-weight:700">${escapeHtml(s.seat)}</td>
       <td style="text-align:right">${escapeHtml(s.name)}</td>
-      <td>${escapeHtml(s.klass||'—')}</td>
-      <td><button class="ghost" style="padding:6px 8px" onclick="delStudent('${s.seat}')">حذف</button></td>
+      <td>${escapeHtml(classNameByCode(s.classCode)||s.classCode||'—')}</td>
+      <td><button class="ghost" style="padding:6px 8px;color:var(--bad)" onclick="delStudent('${escapeHtml(s.seat)}')">حذف</button></td>
     </tr>`;
   });
-  html+='</tbody></table>';
-  host.innerHTML=html;
+  host.innerHTML=html+'</tbody></table>';
+  updateBulkBar();
 }
 
 // طباعة نسخة مخصّصة لكل طالب (كل واحدة في صفحة مستقلة) مع باركود QR
@@ -1225,8 +1425,105 @@ function printAllStudents(){
 }
 
 /* ============================================================
-   تحميل OpenCV
+   كتابة الأسئلة + حفظ الاختبار (للشكل الأفقي فقط)
    ============================================================ */
+const Q_LETTERS_AR = ['أ','ب','ج','د','هـ'];
+function openQEditor(){
+  readCfg(); buildMeta();
+  const body = document.getElementById('qEditorBody');
+  let html = '';
+  let gi = 0;
+  const sections = state.cfg.sections;
+  for(let si=0; si<sections.length; si++){
+    const s = sections[si];
+    const opts = (s.type==='tf')?2 : Math.max(2,Math.min(5,s.opts||4));
+    const secName = s.type==='tf' ? 'صواب / خطأ' : 'اختيار من متعدد';
+    html += `<div style="margin:14px 0 6px;font-weight:700;color:var(--teal-d);border-bottom:2px solid var(--teal-l);padding-bottom:4px">${secName} (${toArabic(s.count)} أسئلة)</div>`;
+    for(let k=0;k<s.count;k++){
+      const q = state.qData[gi] || {};
+      html += `<div style="background:#f7faf9;border:1px solid var(--line);border-radius:10px;padding:10px;margin-bottom:8px">
+        <div style="font-weight:700;font-size:12px;color:var(--muted);margin-bottom:5px">سؤال ${toArabic(k+1)}</div>
+        <input data-qi="${gi}" data-f="text" value="${escapeHtml(q.text||'')}" placeholder="نص السؤال" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:6px">`;
+      if(s.type!=='tf'){
+        for(let o=0;o<opts;o++){
+          const ov = (q.options&&q.options[o])||'';
+          html += `<div style="display:flex;align-items:center;gap:6px;margin-bottom:4px">
+            <span style="font-weight:700;color:var(--teal-d);min-width:22px">${Q_LETTERS_AR[o]})</span>
+            <input data-qi="${gi}" data-f="opt" data-o="${o}" value="${escapeHtml(ov)}" placeholder="الخيار ${Q_LETTERS_AR[o]}" style="flex:1;padding:7px;border:1px solid var(--line);border-radius:8px;font:inherit">
+          </div>`;
+        }
+      }
+      html += `</div>`;
+      gi++;
+    }
+  }
+  body.innerHTML = html || '<div class="empty">حدّد الأقسام أولاً.</div>';
+  document.getElementById('qEditorOverlay').style.display='block';
+}
+function closeQEditor(){ document.getElementById('qEditorOverlay').style.display='none'; }
+function applyQEditor(){
+  const inputs = document.querySelectorAll('#qEditorBody input[data-qi]');
+  const data = [];
+  inputs.forEach(inp=>{
+    const qi = +inp.dataset.qi;
+    if(!data[qi]) data[qi] = { text:'', options:[] };
+    if(inp.dataset.f==='text') data[qi].text = inp.value.trim();
+    else if(inp.dataset.f==='opt') data[qi].options[+inp.dataset.o] = inp.value.trim();
+  });
+  state.qData = data;
+  closeQEditor();
+  renderSheet();
+}
+function clearQData(){
+  if(!confirm('تفريغ كل الأسئلة المكتوبة؟')) return;
+  state.qData = [];
+  closeQEditor();
+  renderSheet();
+}
+
+// حفظ الاختبار الحالي (الأفقي) في السجل، أو تحديث المفتوح للتعديل
+async function saveCurrentExam(){
+  readCfg(); buildMeta();
+  const def = state.editingExamId ? (state.exams.find(e=>e.id===state.editingExamId)||{}).name : (state.cfg.subject||'اختبار');
+  const name = prompt('اسم الاختبار:', def||'اختبار');
+  if(name===null) return;
+  const nm = name.trim(); if(!nm){ alert('اكتب اسماً.'); return; }
+  const exam = {
+    id: state.editingExamId || ('x'+Date.now().toString(36)),
+    name: nm,
+    cfg: JSON.parse(JSON.stringify(state.cfg)),
+    key: state.key.slice(),
+    qData: JSON.parse(JSON.stringify(state.qData||[])),
+    savedAt: new Date().toLocaleString('ar-SA')
+  };
+  state.exams = state.exams.filter(e=>e.id!==exam.id && e.name!==nm);
+  state.exams.push(exam);
+  state.editingExamId = exam.id;
+  renderExamLog();
+  if(typeof renderExams==='function') renderExams();
+  if(cloudReady){
+    try{ await cloudSet('exams','all',state.exams); }catch(e){ alert('حُفظ محلياً، لكن تعذّر الحفظ السحابي: '+e.message); }
+  }
+  alert(`تم حفظ الاختبار «${nm}».`);
+}
+// سجل الاختبارات داخل تبويب التصميم
+function renderExamLog(){
+  const wrap = document.getElementById('examLogWrap');
+  const host = document.getElementById('examLogHost');
+  if(!host) return;
+  if(!state.exams.length){ host.innerHTML='<div class="empty">لا توجد اختبارات محفوظة بعد.</div>'; return; }
+  host.innerHTML = state.exams.map(e=>{
+    const editing = e.id===state.editingExamId;
+    return `<div class="secrow" style="align-items:center;${editing?'background:#eef6f4;border-radius:8px':''}">
+      <div style="flex:1;text-align:right">
+        <div style="font-weight:700;font-size:13px">${escapeHtml(e.name)} ${editing?'<span style=\"color:var(--teal-d);font-size:11px\">• قيد التعديل</span>':''}</div>
+        <div style="font-size:11px;color:var(--muted)">${escapeHtml(e.savedAt||'')} · ${toArabic((e.cfg&&e.cfg.numQ)||0)} سؤال</div>
+      </div>
+      <button class="ghost" style="flex:0 0 auto;padding:8px 12px" onclick="applyExam('${e.id}')">فتح للتعديل</button>
+      <button class="del" onclick="deleteExam('${e.id}')" title="حذف">×</button>
+    </div>`;
+  }).join('');
+}
 function onCvReady(){
   // قد يجهز الكائن cv قبل أن تكتمل نواة WASM — ننتظر cv.Mat
   if(window.cv){
@@ -1837,6 +2134,7 @@ const firebaseConfig = {
 };
 let db = null, cloudReady = false;
 state.exams = [];
+state.savedRecords = [];   // سجلات النتائج المحفوظة (حسب الصف)
 
 function setCloudStatus(kind, msg){
   const el = document.getElementById('cloudStatus');
@@ -1862,6 +2160,7 @@ function initFirebase(){
     loadExamsFromCloud();
     loadResultsFromCloud();
     loadStudentsFromCloud();
+    loadSavedRecords();
   }catch(e){
     setCloudStatus('err','خطأ في الاتصال: '+e.message);
   }
@@ -1906,11 +2205,14 @@ async function loadExamsFromCloud(){
     const data = await cloudGet('exams', 'all');
     state.exams = Array.isArray(data) ? data : [];
     renderExams();
+    renderExamLog();
   }catch(e){ setCloudStatus('err','تعذّر تحميل الاختبارات: '+e.message); }
 }
 function renderExams(){
   const host = document.getElementById('examsHost');
-  document.getElementById('examCount').textContent = toArabic(state.exams.length);
+  const cnt = document.getElementById('examCount');
+  if(cnt) cnt.textContent = toArabic(state.exams.length);
+  if(!host) return;   // قائمة الاختبارات انتقلت إلى تبويب التصميم
   if(!state.exams.length){ host.innerHTML='<div class="empty">لا توجد اختبارات محفوظة بعد.</div>'; return; }
   host.innerHTML = state.exams.map((e,i)=>`
     <div class="secrow" style="align-items:center">
@@ -1922,6 +2224,87 @@ function renderExams(){
       <button class="del" onclick="deleteExam('${e.id}')" title="حذف">×</button>
     </div>`).join('');
 }
+/* ---- سجل النتائج المحفوظة (حسب الصف) ---- */
+function saveGradesToRecord(){
+  if(!state.results.length){ alert('لا توجد نتائج لحفظها. صحّح بطاقات أولاً.'); return; }
+  readCfg();
+  const def = (state.cfg.subject||'') + (state.cfg.className?(' — '+state.cfg.className):'') ;
+  const title = prompt('اسم سجل الدرجات:', def.trim()||'سجل درجات');
+  if(title===null) return;
+  // إثراء كل صفّ باسم صفّه (من قاعدة الطلاب عبر رقم الهوية)
+  const rows = state.results.map(r=>{
+    const st = findStudent(r.seat||'');
+    return {
+      seat: r.seat||'', name: r.name||'', 
+      className: st ? (classNameByCode(st.classCode)||st.classCode||'') : (r.grade||'غير محدد'),
+      correct: r.correct, total: r.total, wrong: r.wrong, blank: r.blank, at: r.at||''
+    };
+  });
+  const rec = { id:'r'+Date.now().toString(36), title:(title.trim()||'سجل درجات'), savedAt:new Date().toLocaleString('ar-SA'), rows };
+  state.savedRecords.push(rec);
+  renderSavedRecords();
+  saveRecordsToCloud();
+  alert(`تم حفظ ${toArabic(rows.length)} نتيجة في «الحفظ» مجمّعةً حسب الصف.`);
+  showTab('cloud');
+}
+function delRecord(id){
+  const r = state.savedRecords.find(x=>x.id===id);
+  if(!r || !confirm(`حذف سجل «${r.title}»؟`)) return;
+  state.savedRecords = state.savedRecords.filter(x=>x.id!==id);
+  renderSavedRecords(); saveRecordsToCloud();
+}
+function renderSavedRecords(){
+  const host = document.getElementById('savedRecordsHost');
+  const cnt = document.getElementById('recCount');
+  if(cnt) cnt.textContent = `${toArabic(state.savedRecords.length)} سجل`;
+  if(!host) return;
+  if(!state.savedRecords.length){ host.innerHTML='<div class="empty">لا توجد سجلات محفوظة بعد.</div>'; return; }
+  let html='';
+  state.savedRecords.slice().reverse().forEach(rec=>{
+    // تجميع حسب الصف
+    const groups={};
+    rec.rows.forEach(row=>{ const k=row.className||'غير محدد'; (groups[k]=groups[k]||[]).push(row); });
+    html += `<div style="border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="text-align:right"><div style="font-weight:700">${escapeHtml(rec.title)}</div>
+        <div style="font-size:11px;color:var(--muted)">${escapeHtml(rec.savedAt)} · ${toArabic(rec.rows.length)} طالب</div></div>
+        <button class="del" onclick="delRecord('${rec.id}')" title="حذف">×</button>
+      </div>`;
+    Object.keys(groups).forEach(cls=>{
+      const rows=groups[cls];
+      html += `<div style="margin-top:6px;font-weight:700;color:var(--teal-d);font-size:13px">📚 ${escapeHtml(cls)} <span style="color:var(--muted);font-weight:400">(${toArabic(rows.length)})</span></div>`;
+      html += `<table style="margin-top:4px"><thead><tr><th>رقم الهوية</th><th>الاسم</th><th>الدرجة</th></tr></thead><tbody>`;
+      rows.forEach(r=>{
+        const pct = r.total? r.correct/r.total:0;
+        const cls2 = pct>=0.5?'score-good':(pct>=0.3?'score-mid':'score-bad');
+        html += `<tr><td style="font-weight:700">${escapeHtml(r.seat||'—')}</td><td style="text-align:right">${escapeHtml(r.name||'—')}</td><td class="${cls2}">${r.correct}/${r.total}</td></tr>`;
+      });
+      html += `</tbody></table>`;
+    });
+    html += `<button class="ghost no-print" style="margin-top:8px" onclick="exportRecordCSV('${rec.id}')">⬇️ تصدير هذا السجل</button></div>`;
+  });
+  host.innerHTML=html;
+}
+function exportRecordCSV(id){
+  const rec = state.savedRecords.find(x=>x.id===id); if(!rec) return;
+  let csv='\uFEFFالصف,رقم الهوية,الاسم,صحيحة,الكلي,خاطئة,متروكة,الوقت\n';
+  rec.rows.forEach(r=>{ csv += `"${r.className||''}","${r.seat||''}","${r.name||''}",${r.correct},${r.total},${r.wrong},${r.blank},"${r.at||''}"\n`; });
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=`${rec.title}.csv`; a.click();
+}
+async function saveRecordsToCloud(){
+  if(!cloudReady) return;
+  try{ await cloudSet('results','records', state.savedRecords); }catch(e){}
+}
+async function loadSavedRecords(manual){
+  if(!cloudReady){ if(manual) alert('قاعدة البيانات غير مهيّأة.'); return; }
+  try{
+    const data = await cloudGet('results','records');
+    state.savedRecords = Array.isArray(data)?data:[];
+    renderSavedRecords();
+    if(manual) setCloudStatus('ok', `✅ حُمّل ${toArabic(state.savedRecords.length)} سجل.`);
+  }catch(e){ if(manual) alert('فشل التحميل: '+e.message); }
+}
 function applyExam(id){
   const e = state.exams.find(x=>x.id===id);
   if(!e) return;
@@ -1931,7 +2314,7 @@ function applyExam(id){
   document.getElementById('cfgSub').value = c.sub||'';
   if(document.getElementById('cfgSchool')) document.getElementById('cfgSchool').value = c.school||'';
   if(document.getElementById('cfgSubject')) document.getElementById('cfgSubject').value = c.subject||'';
-  if(document.getElementById('cfgClassName')) document.getElementById('cfgClassName').value = c.className||'';
+  if(document.getElementById('cfgClassSel')){ refreshClassDropdowns(); document.getElementById('cfgClassSel').value = c.classCode||''; }
   if(document.getElementById('cfgPeriod')) document.getElementById('cfgPeriod').value = c.period||'';
   document.getElementById('cfgPerCol').value = c.perCol||20;
   document.getElementById('cfgSheetType').value = c.sheetType||'full';
@@ -1939,21 +2322,27 @@ function applyExam(id){
   if(document.getElementById('cfgIdMode')) document.getElementById('cfgIdMode').value = im;
   document.getElementById('cfgQrMode').checked = (im==='import');
   state.cfg.sections = JSON.parse(JSON.stringify(c.sections||[{type:'mcq',count:40,opts:4}]));
+  state.qData = JSON.parse(JSON.stringify(e.qData||[]));
+  state.editingExamId = e.id;
   state.key = (e.key||[]).slice();
   renderSections();
   syncIdModeUI();
   renderSheet();         // يعيد البناء ويضبط المفتاح حسب الأطوال
   state.key = (e.key||[]).slice();
   buildKeyGrid();
-  setCloudStatus('ok', `✅ حُمّل الاختبار «${e.name}». افتح «التصميم» أو «التصحيح».`);
+  renderExamLog();
+  setCloudStatus && setCloudStatus('ok', `✅ فُتح الاختبار «${e.name}» للتعديل.`);
   showTab('design');
 }
 async function deleteExam(id){
   const e = state.exams.find(x=>x.id===id);
   if(!e || !confirm(`حذف الاختبار «${e.name}» نهائياً؟`)) return;
   state.exams = state.exams.filter(x=>x.id!==id);
-  try{ await cloudSet('exams', 'all', state.exams); renderExams(); }
-  catch(err){ alert('فشل الحذف: '+err.message); }
+  if(state.editingExamId===id) state.editingExamId=null;
+  renderExamLog();
+  if(typeof renderExams==='function') renderExams();
+  try{ if(cloudReady) await cloudSet('exams', 'all', state.exams); }
+  catch(err){ alert('فشل الحذف السحابي: '+err.message); }
 }
 
 /* ---- النتائج ---- */
@@ -1977,17 +2366,24 @@ async function loadResultsFromCloud(manual){
 async function saveStudentsToCloud(manual){
   if(!cloudReady){ if(manual) alert('قاعدة البيانات غير مهيّأة.'); return; }
   try{
-    await cloudSet('exams', 'students', state.students);
-    if(manual) setCloudStatus('ok', `✅ حُفظ ${toArabic(state.students.length)} طالب سحابياً.`);
-  }catch(e){ if(manual) alert('فشل حفظ الطلاب: '+e.message); }
+    await cloudSet('exams', 'roster', { students: state.students, classes: state.classes });
+    if(manual) setCloudStatus('ok', `✅ حُفظ ${toArabic(state.students.length)} طالب و${toArabic(state.classes.length)} صفّاً سحابياً.`);
+  }catch(e){ if(manual) alert('فشل الحفظ: '+e.message); }
 }
 async function loadStudentsFromCloud(manual){
   if(!cloudReady){ if(manual) alert('قاعدة البيانات غير مهيّأة.'); return; }
   try{
-    const data = await cloudGet('exams', 'students');
-    if(Array.isArray(data)){ state.students = data; renderStudents(); }
-    if(manual) setCloudStatus('ok', `✅ حُمّل ${toArabic(state.students.length)} طالب.`);
-  }catch(e){ if(manual) alert('فشل تحميل الطلاب: '+e.message); }
+    let data = await cloudGet('exams', 'roster');
+    if(data && (data.students||data.classes)){
+      state.students = data.students||[]; state.classes = data.classes||[];
+    } else {
+      // توافق مع الإصدار القديم (قائمة طلاب فقط)
+      const old = await cloudGet('exams', 'students');
+      if(Array.isArray(old)) state.students = old;
+    }
+    refreshClassDropdowns(); renderClasses(); renderStudents();
+    if(manual) setCloudStatus('ok', `✅ حُمّل ${toArabic(state.students.length)} طالب و${toArabic(state.classes.length)} صفّاً.`);
+  }catch(e){ if(manual) alert('فشل التحميل: '+e.message); }
 }
 
 /* ============================================================
@@ -1997,6 +2393,8 @@ window.addEventListener('load', ()=>{
   renderSections();
   syncIdModeUI();
   renderSheet();
+  refreshClassDropdowns();
+  renderClasses();
   renderStudents();
   const wrap=document.getElementById('canvasWrap');
   wrap.addEventListener('click', onCanvasTap);
