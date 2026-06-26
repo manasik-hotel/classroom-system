@@ -187,15 +187,15 @@
         <input id="cfgPerCol" type="number" min="5" max="40" value="20">
       </label>
       <button class="primary" onclick="renderSheet()">تحديث المعاينة</button>
+      <button id="writeQBtn" class="primary no-print" style="margin-top:10px;display:none" onclick="openQEditor()">✍️ كتابة الأسئلة والمعاينة</button>
       <p class="hint" style="color:#d32f2f;font-weight:600">الأنواع: <b>اختيار من متعدد</b> (٢–٥ خيارات)، <b>صواب/خطأ</b> (دائرتان ص/خ)، <b>مزاوجة</b>. في شكل «أسئلة + إجابة» تُطبَّق حدود تلقائية على عدد الأسئلة حسب أسلوب التعريف. المربعات السوداء في الأركان ضرورية للقراءة.</p>
     </div>
 
     <div class="card">
       <h2 class="no-print">معاينة البطاقة</h2>
       <div id="sheetHost"></div>
-      <button id="writeQBtn" class="primary no-print" style="margin-top:12px;display:none" onclick="openQEditor()">✍️ كتابة الأسئلة والمعاينة</button>
+      <button id="saveExamBtn" class="primary no-print" style="margin-top:12px;display:none;background:#0b7a63" onclick="saveCurrentExam()">💾 حفظ الاختبار</button>
       <button class="ghost no-print" style="margin-top:10px" onclick="window.print()">🖨️ طباعة البطاقة (نموذج فارغ)</button>
-      <button id="saveExamBtn" class="primary no-print" style="margin-top:10px;display:none;background:#0b7a63" onclick="saveCurrentExam()">💾 حفظ الاختبار</button>
       <button id="printPerStudentBtn" class="primary no-print" style="margin-top:10px;display:none" onclick="printAllStudents()">🖨️ طباعة نسخة لكل طالب (بالباركود)</button>
       <div id="examLogWrap" class="no-print" style="display:none;margin-top:16px">
         <h2 style="font-size:15px">📋 سجل الاختبارات <span class="sub">اضغط اختباراً لفتحه وتعديله</span></h2>
