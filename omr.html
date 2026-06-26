@@ -346,8 +346,10 @@
 <!-- Firebase (compat) — يُربط بمشروعك نفسه -->
 <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
-<!-- مولّد رمز QR (خفيف، لطباعة باركود كل طالب) -->
+<!-- مولّد رمز QR (لطباعة باركود كل طالب) -->
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+<!-- قارئ رمز QR موثوق (لفكّ الباركود أثناء التصحيح) -->
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <!-- محرّك OpenCV.js — المسار الرسمي الصحيح (~8م.ب، يُحمّل مرة ثم يُحفظ مؤقتاً) -->
 <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onCvReady()" onerror="onCvError()"></script>
 <script>
@@ -838,10 +840,10 @@ function qrBlockSVG(qr, student){
 // يبني وحدات QR كمربعات SVG (يضمّن داخل الـ SVG فيُطبع بدقة)
 function qrModulesSVG(text, x, y, size){
   const qr = qrcode(0, 'M');     // نوع تلقائي، تصحيح أخطاء متوسط
-  qr.addData(text);
+  qr.addData(String(text));
   qr.make();
   const n = qr.getModuleCount();
-  const margin = 2;              // منطقة هدوء (وحدتان)
+  const margin = 4;              // منطقة هدوء قياسية (٤ وحدات) — ضرورية لقراءة موثوقة
   const cell = size/(n + margin*2);
   let s = `<rect x="${x}" y="${y}" width="${size}" height="${size}" fill="#fff"/>`;
   let rects = '';
@@ -850,7 +852,7 @@ function qrModulesSVG(text, x, y, size){
       if(qr.isDark(r,col)){
         const px = x + (col+margin)*cell;
         const py = y + (r+margin)*cell;
-        rects += `<rect x="${px.toFixed(2)}" y="${py.toFixed(2)}" width="${(cell+0.4).toFixed(2)}" height="${(cell+0.4).toFixed(2)}" fill="#000"/>`;
+        rects += `<rect x="${px.toFixed(2)}" y="${py.toFixed(2)}" width="${(cell+0.5).toFixed(2)}" height="${(cell+0.5).toFixed(2)}" fill="#000"/>`;
       }
     }
   }
@@ -1432,8 +1434,8 @@ function gradeCore(srcMat, corners, drawVis){
   }
   // قراءة الباركود (إن وُجد) — أدقّ وسيلة لتحديد الطالب
   let seat='', grade='', qrSeat='', matchedName='';
-  if(state.cfg.qrMode){
-    qrSeat = detectQR(gray);
+  if(state.cfg.qrMode || state.cfg.idMode==='import'){
+    qrSeat = detectQR(warp, L.qr);
     if(qrSeat){
       const st = findStudent(qrSeat);
       seat = normalizeSeat(qrSeat);
@@ -1504,18 +1506,51 @@ function gradeSheet(){
 function winSum(ii,x,y,w,h){
   return ii.doublePtr(y+h)[x+w] - ii.doublePtr(y)[x+w] - ii.doublePtr(y+h)[x] + ii.doublePtr(y)[x];
 }
-// كشف باركود QR وقراءة رقم الجلوس منه (يستخدم محرّك OpenCV نفسه)
+// فكّ باركود QR من الصورة الملوّنة المصحَّحة — jsQR (موثوق) ثم OpenCV احتياطياً
 let _qrDetector = null;
-function detectQR(grayMat){
+function decodeWithJsQR(rgbaData, w, h){
+  if(typeof jsQR === 'undefined') return '';
   try{
-    if(typeof cv==='undefined' || typeof cv.QRCodeDetector!=='function') return '';
-    if(!_qrDetector) _qrDetector = new cv.QRCodeDetector();
-    let pts = new cv.Mat(), straight = new cv.Mat();
-    let txt = '';
-    try{ txt = _qrDetector.detectAndDecode(grayMat, pts, straight) || ''; }
-    catch(e){ txt = ''; }
-    pts.delete(); straight.delete();
-    return normalizeSeat(txt);
+    const res = jsQR(rgbaData, w, h, { inversionAttempts:'attemptBoth' });
+    return res && res.data ? res.data : '';
+  }catch(e){ return ''; }
+}
+// يقرأ منطقة من mat ملوّن (RGBA) ويعيد Uint8ClampedArray
+function matRegionRGBA(mat, x, y, w, h){
+  x=Math.max(0,Math.round(x)); y=Math.max(0,Math.round(y));
+  w=Math.min(mat.cols-x, Math.round(w)); h=Math.min(mat.rows-y, Math.round(h));
+  if(w<=0||h<=0) return null;
+  let roi = mat.roi(new cv.Rect(x,y,w,h));
+  let rgba = new cv.Mat();
+  if(mat.channels()===4) roi.copyTo(rgba);
+  else cv.cvtColor(roi, rgba, cv.COLOR_RGB2RGBA);
+  const out = new Uint8ClampedArray(rgba.data);   // نسخة
+  roi.delete(); rgba.delete();
+  return { data:out, w, h };
+}
+// warpMat: صورة ملوّنة RGBA بحجم L.W×L.H ، qr: منطقة الباركود المتوقّعة (اختياري)
+function detectQR(warpMat, qr){
+  try{
+    if(typeof cv==='undefined' || !warpMat) return '';
+    // 1) جرّب منطقة الباركود المتوقّعة موسّعة (أسرع وأدقّ)
+    if(qr){
+      const pad = qr.size*0.6;
+      const reg = matRegionRGBA(warpMat, qr.x-pad, qr.y-pad, qr.size+pad*2, qr.size+pad*2);
+      if(reg){ const t = decodeWithJsQR(reg.data, reg.w, reg.h); if(t) return normalizeSeat(t); }
+    }
+    // 2) جرّب الصورة كاملة
+    const full = matRegionRGBA(warpMat, 0, 0, warpMat.cols, warpMat.rows);
+    if(full){ const t = decodeWithJsQR(full.data, full.w, full.h); if(t) return normalizeSeat(t); }
+    // 3) احتياطي: OpenCV QRCodeDetector إن توفّر
+    if(typeof cv.QRCodeDetector==='function'){
+      if(!_qrDetector) _qrDetector = new cv.QRCodeDetector();
+      let g=new cv.Mat(), pts=new cv.Mat(), st=new cv.Mat(), txt='';
+      cv.cvtColor(warpMat, g, cv.COLOR_RGBA2GRAY);
+      try{ txt = _qrDetector.detectAndDecode(g, pts, st) || ''; }catch(e){}
+      g.delete(); pts.delete(); st.delete();
+      if(txt) return normalizeSeat(txt);
+    }
+    return '';
   }catch(e){ return ''; }
 }
 // أعلى نسبة تظليل في محيط الدائرة — يمتص الميلان والانحراف البسيط
