@@ -303,19 +303,23 @@
   <section id="panel-grade" class="panel">
     <div class="card">
       <h2>١) مفتاح الإجابة <span class="sub">اختر الإجابة الصحيحة لكل سؤال</span></h2>
+      <label class="field">الصف المراد تصحيحه <span style="font-weight:400;color:var(--muted)">(اختياري)</span>
+        <select id="gradeClassSel" onchange="onGradeClassChange()"><option value="">— كل الطلاب —</option></select>
+      </label>
       <div class="row" style="margin-bottom:10px">
         <button class="ghost" onclick="autoFillKeyDemo()">تعبئة تجريبية</button>
         <button class="ghost" onclick="clearKey()">مسح المفتاح</button>
       </div>
       <div id="keyGrid" class="keygrid"></div>
+      <div id="keyWarn" class="status warn" style="margin-top:10px;display:none">⚠️ أكمل مفتاح الإجابة لكل الأسئلة لتفعيل التصحيح.</div>
     </div>
 
     <div class="card">
       <h2>٢) صورة بطاقة الطالب <span class="sub">من الكاميرا أو ملف ممسوح</span></h2>
       <p id="gradeTip" class="hint" style="margin-top:0"></p>
       <input id="fileInput" type="file" accept="image/*" capture="environment" style="display:none" onchange="loadImage(event)">
-      <button class="primary" onclick="document.getElementById('fileInput').click()">📷 التقاط / اختيار صورة (ورقة واحدة)</button>
-      <button class="ghost" style="margin-top:10px" onclick="startLiveScan()">📹 مسح مباشر متعدد — وجّه الكاميرا فقط</button>
+      <button id="btnCapture" class="primary" onclick="onCaptureClick()">📷 التقاط / اختيار صورة (ورقة واحدة)</button>
+      <button id="btnLive" class="ghost" style="margin-top:10px" onclick="onLiveClick()">📹 مسح مباشر متعدد — وجّه الكاميرا فقط</button>
       <div id="opencvStatus" class="status info" style="margin-top:10px">جارٍ تحميل محرّك المعالجة…</div>
 
       <div id="liveWrap" style="display:none;margin-top:14px">
@@ -359,7 +363,12 @@
         <div><b id="rWrong" style="color:var(--bad)">0</b><span>خاطئة</span></div>
         <div><b id="rBlank" style="color:var(--blank)">0</b><span>متروكة</span></div>
       </div>
-      <label class="field" style="margin-top:12px">اسم الطالب / رقم الجلوس
+      <div id="nameConfirmed" style="display:none;margin-top:12px;padding:11px;background:#e7f7ee;border:1px solid var(--ok);border-radius:10px">
+        <span style="font-size:12px;color:var(--muted)">تم التعرّف على الطالب من الباركود:</span>
+        <div id="nameConfirmedText" style="font-weight:800;color:var(--ok);font-size:16px;margin-top:2px">—</div>
+      </div>
+      <label id="nameManualWrap" class="field" style="margin-top:12px">اسم الطالب / رقم الجلوس
+        <select id="rNameSelect" style="display:none" onchange="onPickStudentResult()"><option value="">— اختر الطالب —</option></select>
         <input id="rName" placeholder="اكتب الاسم ثم احفظ">
       </label>
       <button class="primary" onclick="saveResult()">💾 حفظ في النتائج</button>
@@ -404,6 +413,17 @@
   </div>
 </div>
 
+<!-- نافذة نوع الدرجة عند حفظ الدرجات -->
+<div id="gradeTypeOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,30,28,.55);z-index:9999;overflow-y:auto;padding:16px">
+  <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">💾 حفظ الدرجات</h2>
+      <button class="ghost" style="padding:6px 12px" onclick="closeGradeType()">✕ إغلاق</button>
+    </div>
+    <div id="gradeTypeBody"></div>
+  </div>
+</div>
+
 <!-- Firebase (compat) — يُربط بمشروعك نفسه -->
 <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/12.14.0/firebase-firestore-compat.js"></script>
@@ -445,6 +465,7 @@ const state = {
   attMenuSeat:null,    // الطالب الذي تُعرض قائمة حضوره
   qData:[],          // نصوص الأسئلة وخياراتها (للشكل الأفقي): [{text, options:[]}]
   editingExamId:null, // معرّف الاختبار قيد التعديل (إن وُجد)
+  gradeClassCode:'',  // الصف المختار للتصحيح (اختياري)
   cvReady:false,
   corners:[],
   imgLoaded:false,
@@ -517,7 +538,7 @@ function computeLayout(){
     // لا شبكات تظليل في الورقة الكاملة — البيانات نصّية، والهوية بالباركود (استيراد) أو يدوية (تضليل)
     idLayout = { enabled:false, bottomY:boxTop, cols:[], mode:'box' };
     if(qrMode){
-      qr = { x: boxLeft + (boxW-176)/2, y: boxTop + 250, size: 176 };  // أسفل قائمة البيانات
+      qr = { x: boxLeft + (boxW-206)/2, y: boxTop + 250, size: 206 };  // أسفل قائمة البيانات
     }
     gridTop = boxTop;
     qLeft = M; qRight = boxLeft - 24;
@@ -594,7 +615,7 @@ function computeLayoutQA(){
   hdr.leftL = cL; hdr.leftR = cL+536;        // منطقة معلومات أوسع (حتى قبل الشعار)
   hdr.isImport = isImport;
   let qr = null;
-  if(isImport){ qr = { x: cL+6, y: hdr.boxTop+18, size: 104 }; }
+  if(isImport){ qr = { x: cL+6, y: hdr.boxTop+6, size: 128 }; }
 
   // ---- شريط العنوان + جدول البيانات ----
   hdr.titleBar = { x:cL, y:226, w:cR-cL, h:42 };
@@ -1240,8 +1261,54 @@ function buildKeyGrid(){
     html += `</div></div>`;
   }
   host.innerHTML = html;
+  updateGradeButtons();
 }
-function setKey(q,ci){ state.key[q] = (state.key[q]===ci? null : ci); buildKeyGrid(); }
+// هل اكتمل مفتاح الإجابة لكل الأسئلة؟
+function isKeyComplete(){
+  if(!state.cfg.numQ) return false;
+  for(let q=0; q<state.cfg.numQ; q++){ if(state.key[q]===null || state.key[q]===undefined) return false; }
+  return true;
+}
+// تفعيل/تعطيل زرّي التصحيح حسب اكتمال المفتاح
+function updateGradeButtons(){
+  const ok = isKeyComplete();
+  const bc = document.getElementById('btnCapture'), bl = document.getElementById('btnLive');
+  const warn = document.getElementById('keyWarn');
+  [bc,bl].forEach(b=>{ if(b){ b.disabled=!ok; b.style.opacity=ok?'1':'.5'; b.style.cursor=ok?'pointer':'not-allowed'; } });
+  if(warn) warn.style.display = ok ? 'none' : 'block';
+}
+function onCaptureClick(){
+  if(!isKeyComplete()){ alert('أكمل مفتاح الإجابة لكل الأسئلة أولاً.'); return; }
+  document.getElementById('fileInput').click();
+}
+function onLiveClick(){
+  if(!isKeyComplete()){ alert('أكمل مفتاح الإجابة لكل الأسئلة أولاً.'); return; }
+  startLiveScan();
+}
+// اختيار الصف المراد تصحيحه (اختياري)
+function onGradeClassChange(){
+  const sel = document.getElementById('gradeClassSel');
+  state.gradeClassCode = sel ? sel.value : '';
+  populateResultStudentSelect();
+}
+// تعبئة قائمة الطلاب في النتيجة بطلاب الصف المحدّد (أو الكل)
+function populateResultStudentSelect(){
+  const sel = document.getElementById('rNameSelect'); if(!sel) return;
+  const code = state.gradeClassCode || '';
+  const list = code ? state.students.filter(s=>s.classCode===code) : state.students.slice();
+  sel.innerHTML = '<option value="">— اختر الطالب —</option>' +
+    list.map(s=>`<option value="${escapeHtml(s.seat)}">${escapeHtml(s.name)} · ${escapeHtml(s.seat)}</option>`).join('');
+}
+// عند اختيار طالب من القائمة يدوياً
+function onPickStudentResult(){
+  const sel = document.getElementById('rNameSelect'); if(!sel||!sel.value) return;
+  const st = findStudent(sel.value);
+  if(st && state.lastGrade){
+    state.lastGrade.seat = st.seat;
+    state.lastGrade.matchedName = st.name;
+    document.getElementById('rName').value = `${st.name} · جلوس ${st.seat}`;
+  }
+}
 function clearKey(){ state.key = new Array(state.cfg.numQ).fill(null); buildKeyGrid(); }
 function autoFillKeyDemo(){
   for(let q=0;q<state.cfg.numQ;q++) state.key[q] = q % state.meta[q].opts;
@@ -1299,6 +1366,8 @@ function refreshClassDropdowns(){
   set('stViewClass','<option value="">— كل الفصول —</option>');
   set('cfgClassSel','<option value="">— اختر الصف —</option>');
   set('wlViewClass','<option value="">— اختر الصف —</option>');
+  set('gradeClassSel','<option value="">— كل الطلاب —</option>');
+  if(typeof populateResultStudentSelect==='function') populateResultStudentSelect();
 }
 
 /* ---- الطلاب ---- */
@@ -2060,11 +2129,29 @@ function gradeSheet(){
   document.getElementById('rCorrect').textContent=result.correct;
   document.getElementById('rWrong').textContent=result.wrong;
   document.getElementById('rBlank').textContent=result.blank;
-  let nameVal = '';
-  if(result.matchedName) nameVal = `${result.matchedName} · جلوس ${result.seat}`;
-  else if(result.qrSeat) nameVal = `رقم الجلوس ${result.seat} (غير مسجّل في القائمة)`;
-  else if(result.seat) nameVal = `رقم الجلوس ${result.seat}${result.grade?` · صف ${result.grade}`:''}`;
-  document.getElementById('rName').value = nameVal;
+  // التعرّف على الطالب: تأكيد أخضر إن قُرئ الباركود، وإلا قائمة منسدلة بطلاب الصف
+  const confirmedBox = document.getElementById('nameConfirmed');
+  const confirmedTxt = document.getElementById('nameConfirmedText');
+  const manualWrap = document.getElementById('nameManualWrap');
+  const sel = document.getElementById('rNameSelect');
+  const inp = document.getElementById('rName');
+  if(result.matchedName){
+    // تم التعرّف → عرض أخضر مؤكّد، إخفاء الإدخال اليدوي
+    confirmedTxt.textContent = `${result.matchedName} · جلوس ${result.seat}`;
+    confirmedBox.style.display='block';
+    manualWrap.style.display='none';
+    inp.value = `${result.matchedName} · جلوس ${result.seat}`;
+  } else {
+    // لم يُتعرّف → قائمة منسدلة بأسماء طلاب الصف المحدّد لاختيار الطالب
+    confirmedBox.style.display='none';
+    manualWrap.style.display='block';
+    populateResultStudentSelect();
+    if(sel){ sel.style.display='block'; sel.value=''; }
+    let nameVal = '';
+    if(result.qrSeat) nameVal = `رقم الجلوس ${result.seat} (غير مسجّل)`;
+    else if(result.seat) nameVal = `رقم الجلوس ${result.seat}`;
+    inp.value = nameVal;
+  }
 
   const cs=document.getElementById('cornerStatus');
   cs.className='status ok';
@@ -2315,12 +2402,15 @@ function onLiveCaptured(result){
   live.count++;
   const nm = result.matchedName ? result.matchedName
            : (result.seat ? `جلوس ${result.seat}` : `ورقة ${state.results.length+1}`);
-  state.results.push({ name:nm, ...result, at:new Date().toLocaleString('ar-SA') });
+  const row = { name:nm, ...result, at:new Date().toLocaleString('ar-SA') };
+  // منع التكرار: إن كان للطالب (نفس رقم الجلوس) سجلّ سابق، يُحدَّث بدل تكراره
+  let idx = -1;
+  if(result.seat){ idx = state.results.findIndex(r=> r.seat && normalizeSeat(r.seat)===normalizeSeat(result.seat)); }
+  if(idx>=0){ state.results[idx] = row; setLiveStatus('ok', `↻ حُدّثت ورقة ${nm} (${result.correct}/${result.total}).`); }
+  else { state.results.push(row); setLiveStatus('ok', `✓ تم مسح ورقة (${result.correct}/${result.total})${result.matchedName?` · ${result.matchedName}`:(result.seat?` · جلوس ${result.seat}`:'')}. أبعدها وقرّب التالية.`); }
   renderResults();
   document.getElementById('liveCount').textContent = toArabic(live.count);
   document.getElementById('liveLast').textContent = `${result.correct}/${result.total}`;
-  const extra = result.matchedName ? ` · ${result.matchedName}` : (result.seat ? ` · جلوس ${result.seat}` : '');
-  setLiveStatus('ok', `✓ تم مسح ورقة (${result.correct}/${result.total})${extra}. أبعدها وقرّب التالية.`);
   beep(); if(navigator.vibrate) navigator.vibrate(120);
   saveResultsToCloud();
 }
@@ -2387,7 +2477,7 @@ function renderResults(){
       <td>${escapeHtml(r.grade||'—')}</td>
       <td><input class="nameinput" value="${escapeHtml(r.name)}" onchange="editName(${i},this.value)"></td>
       <td class="${cls}">${r.correct}/${r.total}</td>
-      <td style="color:var(--ok)">${r.correct}</td>
+      <td><input type="number" min="0" max="${r.total}" value="${r.correct}" style="width:54px;padding:5px;border:1px solid var(--line);border-radius:7px;font:inherit;font-weight:700;text-align:center;color:var(--ok)" onchange="editCorrect(${i},this.value)"></td>
       <td style="color:var(--bad)">${r.wrong}</td>
       <td style="color:var(--blank)">${r.blank}</td>
       <td><button class="ghost" style="padding:6px 8px" onclick="delResult(${i})">حذف</button></td>
@@ -2395,6 +2485,17 @@ function renderResults(){
   });
   html+='</tbody></table></div>';
   host.innerHTML=html;
+}
+// تعديل عدد الصحيحة يدوياً → يُعيد حساب الخاطئة والدرجة تلقائياً
+function editCorrect(i,val){
+  const r = state.results[i]; if(!r) return;
+  let c = parseInt(val,10); if(isNaN(c)) c=0;
+  c = Math.max(0, Math.min(r.total||0, c));
+  r.correct = c;
+  r.wrong = (r.total||0) - c;     // الباقي يُحتسب خطأً
+  r.blank = 0;
+  renderResults();
+  saveResultsToCloud();
 }
 function editName(i,v){ state.results[i].name=v; saveResultsToCloud(); }
 function delResult(i){ state.results.splice(i,1); renderResults(); saveResultsToCloud(); }
@@ -2529,23 +2630,61 @@ function renderExams(){
       <button class="del" onclick="deleteExam('${e.id}')" title="حذف">×</button>
     </div>`).join('');
 }
-/* ---- سجل النتائج المحفوظة (حسب الصف) ---- */
+/* ---- حفظ الدرجات إلى سجل الأعمال عبر نافذة نوع الدرجة ---- */
 function saveGradesToRecord(){
   if(!state.results.length){ alert('لا توجد نتائج لحفظها. صحّح بطاقات أولاً.'); return; }
-  readCfg();
-  // اسم عمود الفترة في سجل الأعمال = ما كُتب في «الفترة» عند التصميم
-  const period = (state.cfg.period||'').trim();
-  const def = 'اختبار الفترة ' + (period||'');
-  const label = prompt('اسم عمود الاختبار في سجل الأعمال:', def.trim()||'اختبار');
-  if(label===null) return;
-  const periodLabel = label.trim() || def.trim() || 'اختبار';
-  // إرسال درجة كل طالب (مطابقة برقم الهوية) إلى سجل الأعمال تحت اسم الفترة
+  gradeTypeStep('root');
+  document.getElementById('gradeTypeOverlay').style.display='block';
+}
+function closeGradeType(){ document.getElementById('gradeTypeOverlay').style.display='none'; }
+// خطوات اختيار نوع الدرجة
+function gradeTypeStep(step, data){
+  const body = document.getElementById('gradeTypeBody');
+  const btn = (label,onclick,bg)=>`<button class="primary" style="width:100%;margin-bottom:8px;${bg||''}" onclick="${onclick}">${label}</button>`;
+  if(step==='root'){
+    body.innerHTML = `<p class="hint" style="margin-top:0">اختر نوع الدرجة التي ستُسجَّل في سجل الأعمال:</p>`
+      + btn('🗣️ مشاركة', `commitGradesColumn('مشاركة',false)`)
+      + btn('📝 واجبات', `commitGradesColumn('واجبات',false)`)
+      + btn('🧪 اختبار', `gradeTypeStep('exam')`, 'background:#0b7a63')
+      + btn('✏️ أخرى', `gradeTypeStep('other')`, 'background:#6b7280');
+  } else if(step==='other'){
+    body.innerHTML = `<p class="hint" style="margin-top:0">اكتب اسم العمود:</p>
+      <input id="gtOther" placeholder="اسم العمود" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;margin-bottom:10px">`
+      + btn('حفظ', `(function(){var v=(document.getElementById('gtOther').value||'').trim(); if(!v){alert('اكتب اسم العمود.');return;} commitGradesColumn(v,false);})()`)
+      + btn('↩︎ رجوع', `gradeTypeStep('root')`, 'background:#6b7280');
+  } else if(step==='exam'){
+    body.innerHTML = `<p class="hint" style="margin-top:0">نوع الاختبار:</p>`
+      + btn('📅 اختبار فترة', `gradeTypeStep('period')`, 'background:#0b7a63')
+      + btn('🏁 نهائي', `commitGradesColumn('نهائي',true)`)
+      + btn('↩︎ رجوع', `gradeTypeStep('root')`, 'background:#6b7280');
+  } else if(step==='period'){
+    const periods = ['الأولى','الثانية','الثالثة','الرابعة'];
+    body.innerHTML = `<p class="hint" style="margin-top:0">اختر الفترة:</p>`
+      + periods.map(p=>btn(`الفترة ${p}`, `commitGradesColumn('اختبار الفترة ${p}',true)`)).join('')
+      + btn('↩︎ رجوع', `gradeTypeStep('exam')`, 'background:#6b7280');
+  }
+}
+// تنفيذ الحفظ تحت اسم العمود المختار
+function commitGradesColumn(label, isExam){
   const rows = state.results.map(r=>({ seat:r.seat||'', name:r.name||'', correct:r.correct, total:r.total }));
+  // كشف التكرار لاختبارات الفترة/النهائي: هل العمود موجود مسبقاً لأيّ من هؤلاء الطلاب؟
+  if(isExam){
+    let exists=false;
+    for(const r of rows){
+      const st=findStudent(r.seat); if(!st) continue;
+      const e=(state.workLog[st.classCode]&&state.workLog[st.classCode][st.seat]);
+      if(e && e.exams && e.exams[label]!=null){ exists=true; break; }
+    }
+    if(exists){
+      if(!confirm(`سُجّل سابقاً «${label}». هل تريد تحديث القيم الموجودة بالدرجات الجديدة؟`)) return;
+    }
+  }
   let matched=0, unmatched=0;
   rows.forEach(r=>{ if(findStudent(r.seat)) matched++; else unmatched++; });
-  pushExamGradesToWorkLog(periodLabel, rows);
+  pushExamGradesToWorkLog(label, rows);
   renderWorkLog();
-  let msg = `تم إرسال درجات «${periodLabel}» إلى سجل الأعمال.\nطُوبق ${toArabic(matched)} طالباً`;
+  closeGradeType();
+  let msg = `تم تسجيل «${label}» في سجل الأعمال.\nطُوبق ${toArabic(matched)} طالباً`;
   if(unmatched) msg += ` · ${toArabic(unmatched)} غير مسجّل في قاعدة الطلاب`;
   alert(msg);
   showTab('cloud');
