@@ -1988,12 +1988,8 @@ function gradeCore(srcMat, corners, drawVis){
 
   for(const q of L.questions){
     const fills = q.choices.map(b=>refinedFill(ii, L.W, L.H, b, searchX, searchY));
-    const order = fills.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
-    const maxFill = order[0].v, secondFill = order.length>1?order[1].v:0;
-    let picked=-1, isMultiple=false;
-    if(maxFill < absThresh){ picked=-1; }
-    else if(secondFill >= absThresh && (maxFill - secondFill) < 0.15){ isMultiple=true; }
-    else { picked = order[0].i; }
+    const dec = decideAnswer(fills);
+    let picked = dec.picked, isMultiple = dec.multiple;
     const keyAns = state.key[q.q];
     let verdict;
     if(isMultiple){ verdict='multiple'; multiple++; wrong++; }
@@ -2025,10 +2021,10 @@ function gradeCore(srcMat, corners, drawVis){
   if(L.idLayout.enabled && !qrSeat){
     const readCol = (col)=>{
       const fills = col.bubbles.map(b=>refinedFill(ii, L.W, L.H, b, Math.round(col.bubbles[0].r*0.7), Math.round(col.bubbles[0].r*0.7)));
-      const order = fills.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
-      if(order[0].v < absThresh) return '';                       // خانة فارغة
-      if(order.length>1 && order[1].v >= absThresh && (order[0].v-order[1].v)<0.15) return '?';
-      return String(order[0].i);
+      const dec = decideAnswer(fills);
+      if(dec.multiple) return '?';
+      if(dec.picked<0) return '';
+      return String(dec.picked);
     };
     for(const col of L.idLayout.cols){
       const d = readCol(col);
@@ -2133,6 +2129,29 @@ function detectQR(warpMat, qr){
   }catch(e){ return ''; }
 }
 // أعلى نسبة تظليل في محيط الدائرة — يمتص الميلان والانحراف البسيط
+// قرار تكيّفي: يحدّد الدائرة المظلّلة بالمقارنة النسبية داخل السؤال (لا عتبة مطلقة)
+// fills: نسب التظليل لكل خيار (0..1). يعيد {picked, multiple}
+function decideAnswer(fills){
+  const n = fills.length;
+  if(n===0) return { picked:-1, multiple:false };
+  const order = fills.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
+  const maxFill = order[0].v;
+  const second  = n>1 ? order[1].v : 0;
+  const emptyEst = Math.min.apply(null, fills);      // ألمع دائرة ≈ فارغة (مرجع الإضاءة)
+  const contrast = maxFill - emptyEst;               // تباين الأغمق عن الفارغ
+  // مؤشّر الحساسية يضبط الحد الأدنى للتباين: أقل = يلتقط التظليل الخفيف
+  const sens = (typeof state!=='undefined' && state.threshPct!=null) ? state.threshPct/100 : 0.40;
+  const contrastMin = 0.05 + sens*0.16;              // ≈0.13 عند ٤٠٪
+  const floorAbs = 0.12;                             // أرضية مطلقة لرفض ضجيج الورق
+  if(contrast < contrastMin || maxFill < floorAbs) return { picked:-1, multiple:false };
+  // تظليل مزدوج: الدائرة الثانية قريبة من الأولى وبعيدة عن الفارغة
+  const secondContrast = second - emptyEst;
+  if(secondContrast >= contrast*0.65 && (maxFill - second) < contrastMin*0.85){
+    return { picked:-1, multiple:true };
+  }
+  return { picked: order[0].i, multiple:false };
+}
+
 function refinedFill(ii, W, H, b, sx, sy){
   const half = Math.max(6, Math.round(b.r*0.95));
   const ws = half*2;
