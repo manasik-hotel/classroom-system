@@ -1,0 +1,46 @@
+# ============================================================
+# حماية الملفات الحساسة
+# ============================================================
+
+# إعدادات Firebase (مفاتيح API)
+config.js
+.env
+.env.local
+.env.*.local
+
+# ملفات النظام
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ملفات التطوير
+node_modules/
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# بيانات محلية (قد تحتوي على معلومات حساسة)
+*.sqlite
+*.db
+data/
+
+# ملفات المحرر
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# ملفات النسخ الاحتياطية
+*.backup
+*.bak
+.backup/
+
+# لا تشارك هذه الملفات أبداً على GitHub
+config.js
+config.*.js
+!config.example.js
