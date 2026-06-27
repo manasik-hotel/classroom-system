@@ -278,7 +278,8 @@
 
     <!-- ===== عرض الطلاب حسب الصف ===== -->
     <div class="card">
-      <h2>طلاب الصف <span class="sub" id="stCount">٠ طالب</span></h2>
+      <h2><button class="collapseBtn" onclick="toggleCard('cardStudents',this)">−</button> طلاب الصف <span class="sub" id="stCount">٠ طالب</span></h2>
+      <div id="cardStudents">
       <label class="field">اعرض طلاب الصف
         <select id="stViewClass" onchange="renderStudents()"><option value="">— كل الفصول —</option></select>
       </label>
@@ -292,11 +293,9 @@
         </div>
       </div>
       <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد.</div></div>
+      <p class="hint" style="margin:10px 0 0;line-height:1.9">📌 <b>تسجيل الحضور والغياب:</b> اضغط رقم الهوية لتحديد الحالة وكتابة ملاحظة.<br>📌 <b>الملاحظات ونقل الطلاب:</b> اختر الطالب من خانة الاختيار.</p>
       <button class="primary" style="margin-top:12px;width:100%;background:#0b7a63" onclick="commitAttendance()">💾 الحفظ في سجل الأعمال</button>
       <p class="hint" style="margin-top:6px">يسجّل حضور/غياب/تأخّر كل طلاب العرض الحالي بتاريخ اليوم (غير المحدَّد = حاضر)، تراكمياً في سجل الأعمال. الحالة اللحظية تُصفَّر بعد ٩٠ دقيقة تلقائياً.</p>
-      <div class="row" style="margin-top:8px">
-        <button class="ghost" onclick="saveStudentsToCloud(true)">⬆️ حفظ القائمة</button>
-        <button class="ghost" onclick="loadStudentsFromCloud(true)">⬇️ تحميل</button>
       </div>
     </div>
   </section>
@@ -366,9 +365,9 @@
         <span style="font-size:12px;color:var(--muted)">تم التعرّف على الطالب من الباركود:</span>
         <div id="nameConfirmedText" style="font-weight:800;color:var(--ok);font-size:16px;margin-top:2px">—</div>
       </div>
-      <label id="nameManualWrap" class="field" style="margin-top:12px">اسم الطالب / رقم الجلوس
+      <label id="nameManualWrap" class="field" style="margin-top:12px">رقم الجلوس
         <select id="rNameSelect" style="display:none" onchange="onPickStudentResult()"><option value="">— اختر الطالب —</option></select>
-        <input id="rName" placeholder="اكتب الاسم ثم احفظ">
+        <input id="rName" inputmode="numeric" placeholder="رقم الجلوس">
       </label>
       <button class="primary" onclick="saveResult()">💾 حفظ في النتائج</button>
     </div>
@@ -381,9 +380,13 @@
       <div id="resultsTableHost"><div class="empty">لا توجد نتائج محفوظة بعد.<br>صحّح بطاقة ثم احفظها لتظهر هنا.</div></div>
       <div class="row no-print" style="margin-top:12px">
         <button class="ghost" onclick="exportCSV()">⬇️ تصدير Excel/CSV</button>
+        <button class="ghost" onclick="printResultsPDF()">🖨️ طباعة PDF</button>
+      </div>
+      <div class="row no-print" style="margin-top:8px">
+        <button class="ghost" style="color:var(--bad);border-color:var(--bad)" onclick="clearAllResults()">🗑️ حذف النتائج</button>
         <button class="primary" style="background:#0b7a63" onclick="saveGradesToRecord()">💾 حفظ الدرجات</button>
       </div>
-      <p class="hint" style="margin-top:8px">«حفظ الدرجات» يحفظ هذه النتائج في تبويب «الحفظ» مجمّعةً حسب الصف.</p>
+      <p class="hint" style="margin-top:8px">«حفظ الدرجات» يرسل النتائج إلى سجل الأعمال ثم يفرّغ هذا السجل. «حذف النتائج» يمسح القائمة دون حفظ.</p>
     </div>
   </section>
 
@@ -1278,10 +1281,12 @@ function updateGradeButtons(){
 }
 function onCaptureClick(){
   if(!isKeyComplete()){ alert('أكمل مفتاح الإجابة لكل الأسئلة أولاً.'); return; }
+  if(state.results.length && !confirm(`توجد ${toArabic(state.results.length)} نتيجة سابقة في السجل. سيُضاف التصحيح الجديد إليها (تراكمياً). متابعة؟`)) return;
   document.getElementById('fileInput').click();
 }
 function onLiveClick(){
   if(!isKeyComplete()){ alert('أكمل مفتاح الإجابة لكل الأسئلة أولاً.'); return; }
+  if(state.results.length && !confirm(`توجد ${toArabic(state.results.length)} نتيجة سابقة في السجل. سيُضاف المسح الجديد إليها (تراكمياً). متابعة؟`)) return;
   startLiveScan();
 }
 // اختيار الصف المراد تصحيحه (اختياري)
@@ -1305,7 +1310,7 @@ function onPickStudentResult(){
   if(st && state.lastGrade){
     state.lastGrade.seat = st.seat;
     state.lastGrade.matchedName = st.name;
-    document.getElementById('rName').value = `${st.name} · جلوس ${st.seat}`;
+    document.getElementById('rName').value = st.seat;
   }
 }
 function setKey(q,ci){ state.key[q] = (state.key[q]===ci? null : ci); buildKeyGrid(); }
@@ -2136,17 +2141,13 @@ function gradeSheet(){
     confirmedTxt.textContent = `${result.matchedName} · جلوس ${result.seat}`;
     confirmedBox.style.display='block';
     manualWrap.style.display='none';
-    inp.value = `${result.matchedName} · جلوس ${result.seat}`;
   } else {
-    // لم يُتعرّف → قائمة منسدلة بأسماء طلاب الصف المحدّد لاختيار الطالب
+    // لم يُتعرّف → قائمة منسدلة بأسماء طلاب الصف + حقل رقم الجلوس
     confirmedBox.style.display='none';
     manualWrap.style.display='block';
     populateResultStudentSelect();
     if(sel){ sel.style.display='block'; sel.value=''; }
-    let nameVal = '';
-    if(result.qrSeat) nameVal = `رقم الجلوس ${result.seat} (غير مسجّل)`;
-    else if(result.seat) nameVal = `رقم الجلوس ${result.seat}`;
-    inp.value = nameVal;
+    inp.value = result.seat || '';        // رقم الجلوس فقط إن قُرئ
   }
 
   const cs=document.getElementById('cornerStatus');
@@ -2396,8 +2397,7 @@ function liveLoop(ts){
 
 function onLiveCaptured(result){
   live.count++;
-  const nm = result.matchedName ? result.matchedName
-           : (result.seat ? `جلوس ${result.seat}` : `ورقة ${state.results.length+1}`);
+  const nm = result.matchedName || '';        // الاسم فقط (الرقم في عموده)
   const row = { name:nm, ...result, at:new Date().toLocaleString('ar-SA') };
   // منع التكرار: إن كان للطالب (نفس رقم الجلوس) سجلّ سابق، يُحدَّث بدل تكراره
   let idx = -1;
@@ -2450,8 +2450,15 @@ function beep(){
    ============================================================ */
 function saveResult(){
   if(!state.lastGrade){ return; }
-  const name = document.getElementById('rName').value.trim() || `بطاقة ${state.results.length+1}`;
-  state.results.push({ name, ...state.lastGrade, at:new Date().toLocaleString('ar-SA') });
+  const g = state.lastGrade;
+  // إن لم يُتعرّف على الطالب، خذ رقم الجلوس المُدخل يدوياً وطابقه بالقائمة
+  if(!g.matchedName){
+    const typed = normalizeSeat(document.getElementById('rName').value);
+    if(typed){ g.seat = typed; const st = findStudent(typed); if(st) g.matchedName = st.name; }
+  }
+  const name = g.matchedName || '';            // الاسم فقط (في عموده)
+  const seat = g.seat || '';                   // رقم الجلوس فقط (في عموده)
+  state.results.push({ ...g, name, seat, at:new Date().toLocaleString('ar-SA') });
   document.getElementById('lastResult').style.display='none';
   renderResults();
   saveResultsToCloud();
@@ -2515,6 +2522,16 @@ function showTab(t){
   ['design','students','grade','results','cloud'].forEach(x=>{
     document.getElementById('panel-'+x).classList.toggle('active', x===t);
     document.getElementById('tab-'+x).classList.toggle('active', x===t);
+  });
+  // عند دخول تبويب الطلاب: كل الأقسام مصغّرة افتراضياً
+  if(t==='students') collapseStudentCards();
+}
+function collapseStudentCards(){
+  ['cardClasses','cardAddStudent','cardImport','cardStudents'].forEach(id=>{
+    const el = document.getElementById(id); if(!el) return;
+    el.style.display = 'none';
+    // ضبط زر التصغير المجاور إلى +
+    const card = el.closest('.card'); if(card){ const b = card.querySelector('.collapseBtn'); if(b) b.textContent='+'; }
   });
 }
 
@@ -2680,10 +2697,49 @@ function commitGradesColumn(label, isExam){
   pushExamGradesToWorkLog(label, rows);
   renderWorkLog();
   closeGradeType();
+  // تفريغ سجل النتائج بعد الحفظ
+  state.results = [];
+  renderResults();
+  saveResultsToCloud();
   let msg = `تم تسجيل «${label}» في سجل الأعمال.\nطُوبق ${toArabic(matched)} طالباً`;
   if(unmatched) msg += ` · ${toArabic(unmatched)} غير مسجّل في قاعدة الطلاب`;
   alert(msg);
   showTab('cloud');
+}
+// حذف كل النتائج يدوياً (دون حفظ)
+function clearAllResults(){
+  if(!state.results.length){ alert('لا توجد نتائج لحذفها.'); return; }
+  if(!confirm(`حذف ${toArabic(state.results.length)} نتيجة من السجل؟ لا يمكن التراجع.`)) return;
+  state.results = [];
+  renderResults();
+  saveResultsToCloud();
+}
+// طباعة سجل النتائج PDF (عبر نافذة طباعة المتصفّح)
+function printResultsPDF(){
+  if(!state.results.length){ alert('لا توجد نتائج للطباعة.'); return; }
+  const rows = state.results.map((r,i)=>`<tr>
+    <td>${i+1}</td><td>${escapeHtml(r.seat||'—')}</td><td>${escapeHtml(r.name||'—')}</td>
+    <td>${r.correct}/${r.total}</td><td>${r.correct}</td><td>${r.wrong}</td><td>${r.blank}</td></tr>`).join('');
+  const win = window.open('', '_blank');
+  if(!win){ alert('فضلاً اسمح بالنوافذ المنبثقة للطباعة.'); return; }
+  win.document.write(`<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
+    <title>سجل النتائج</title>
+    <style>
+      body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;padding:24px;color:#13343b}
+      h1{font-size:20px;margin:0 0 4px}
+      .meta{color:#667;font-size:13px;margin-bottom:14px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th,td{border:1px solid #cbd5d3;padding:8px 6px;text-align:center}
+      th{background:#0f766e;color:#fff}
+      tr:nth-child(even){background:#f4faf8}
+    </style></head><body>
+    <h1>سجل النتائج</h1>
+    <div class="meta">${escapeHtml(state.cfg.title||'')} · ${escapeHtml(state.cfg.subject||'')} · عدد البطاقات: ${toArabic(state.results.length)} · ${new Date().toLocaleDateString('ar-SA')}</div>
+    <table><thead><tr><th>#</th><th>رقم الجلوس</th><th>الاسم</th><th>الدرجة</th><th>صحيحة</th><th>خاطئة</th><th>متروكة</th></tr></thead>
+    <tbody>${rows}</tbody></table>
+    <script>window.onload=function(){window.print();}<\/script>
+    </body></html>`);
+  win.document.close();
 }
 function delRecord(id){
   const r = state.savedRecords.find(x=>x.id===id);
@@ -2834,6 +2890,7 @@ window.addEventListener('load', ()=>{
   refreshClassDropdowns();
   renderClasses();
   renderStudents();
+  collapseStudentCards();
   const wrap=document.getElementById('canvasWrap');
   wrap.addEventListener('click', onCanvasTap);
   initFirebase();
