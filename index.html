@@ -318,6 +318,19 @@
       <input id="fileInput" type="file" accept="image/*" capture="environment" style="display:none" onchange="loadImage(event)">
       <button id="btnCapture" class="primary" onclick="onCaptureClick()">📷 التقاط / اختيار صورة (ورقة واحدة)</button>
       <button id="btnLive" class="ghost" style="margin-top:10px" onclick="onLiveClick()">📹 مسح مباشر متعدد — وجّه الكاميرا فقط</button>
+      <button id="btnBatch" class="ghost" style="margin-top:10px" onclick="onBatchClick()">📚 تصوير دفعة — صوّر كل الأوراق ثم صحّح الكل</button>
+      <input id="batchInput" type="file" accept="image/*" capture="environment" style="display:none" onchange="onBatchPicked(event)">
+      <div id="batchPanel" style="display:none;margin-top:12px;padding:12px;background:#f4faf8;border:1px solid var(--teal-l);border-radius:12px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <strong style="color:var(--teal-d)">📚 دفعة التصوير</strong>
+          <span id="batchCount" style="font-weight:700;color:var(--muted)">٠ ورقة</span>
+        </div>
+        <div id="batchStrip" style="display:flex;gap:8px;flex-wrap:wrap;margin:10px 0"></div>
+        <div id="batchHint" class="hint" style="margin:0 0 10px"></div>
+        <button id="btnBatchNext" class="ghost" style="width:100%;margin-bottom:8px" onclick="document.getElementById('batchInput').click()">📷 التقاط ورقة</button>
+        <button id="btnBatchGrade" class="primary" style="width:100%;background:#0b7a63;margin-bottom:8px" onclick="gradeBatch()">✅ صحّح الكل</button>
+        <button class="ghost" style="width:100%;color:var(--bad);border-color:var(--bad)" onclick="cancelBatch()">✖ إلغاء الدفعة</button>
+      </div>
       <div id="opencvStatus" class="status info" style="margin-top:10px">جارٍ تحميل محرّك المعالجة…</div>
 
       <div id="liveWrap" style="display:none;margin-top:14px">
@@ -1274,9 +1287,9 @@ function isKeyComplete(){
 // تفعيل/تعطيل زرّي التصحيح حسب اكتمال المفتاح
 function updateGradeButtons(){
   const ok = isKeyComplete();
-  const bc = document.getElementById('btnCapture'), bl = document.getElementById('btnLive');
+  const bc = document.getElementById('btnCapture'), bl = document.getElementById('btnLive'), bb = document.getElementById('btnBatch');
   const warn = document.getElementById('keyWarn');
-  [bc,bl].forEach(b=>{ if(b){ b.disabled=!ok; b.style.opacity=ok?'1':'.5'; b.style.cursor=ok?'pointer':'not-allowed'; } });
+  [bc,bl,bb].forEach(b=>{ if(b){ b.disabled=!ok; b.style.opacity=ok?'1':'.5'; b.style.cursor=ok?'pointer':'not-allowed'; } });
   if(warn) warn.style.display = ok ? 'none' : 'block';
 }
 function onCaptureClick(){
@@ -1912,18 +1925,16 @@ function resetCorners(){
   cs.textContent='انقر على المربعات السوداء الأربعة بالترتيب: ١) أعلى-يمين  ٢) أعلى-يسار  ٣) أسفل-يسار  ٤) أسفل-يمين — أو استخدم الكشف التلقائي.';
 }
 
-/* الكشف التلقائي عن المربعات الركنية */
-function tryAutoDetect(){
-  if(!state.cvReady){ alert('محرّك المعالجة غير جاهز بعد.'); return; }
-  if(!state.imgLoaded) return;
-  let src = cv.imread(displayCanvas);
+/* الكشف التلقائي عن المربعات الركنية (دالة قابلة لإعادة الاستخدام) */
+function detectCornersOnCanvas(canvas){
+  let src = cv.imread(canvas);
   let gray=new cv.Mat(), blur=new cv.Mat(), bin=new cv.Mat();
   cv.cvtColor(src,gray,cv.COLOR_RGBA2GRAY);
   cv.GaussianBlur(gray,blur,new cv.Size(5,5),0);
   cv.threshold(blur,bin,0,255,cv.THRESH_BINARY_INV+cv.THRESH_OTSU);
   let contours=new cv.MatVector(), hierarchy=new cv.Mat();
   cv.findContours(bin,contours,hierarchy,cv.RETR_LIST,cv.CHAIN_APPROX_SIMPLE);
-  const W=displayCanvas.width, H=displayCanvas.height, imgArea=W*H;
+  const W=canvas.width, H=canvas.height, imgArea=W*H;
   const minA=imgArea*0.0004, maxA=imgArea*0.03;
   const cand=[];
   for(let i=0;i<contours.size();i++){
@@ -1945,10 +1956,8 @@ function tryAutoDetect(){
     cnt.delete();
   }
   src.delete();gray.delete();blur.delete();bin.delete();contours.delete();hierarchy.delete();
-  // أقرب مرشح لكل ركن
   const corners=[{x:0,y:0},{x:W,y:0},{x:W,y:H},{x:0,y:H}];
-  const picked=[];
-  let ok=true;
+  const picked=[]; let ok=true;
   for(const cor of corners){
     let best=null,bd=Infinity;
     for(const cn of cand){
@@ -1958,8 +1967,14 @@ function tryAutoDetect(){
     if(!best || bd>Math.hypot(W,H)*0.35){ ok=false; break; }
     picked.push({x:best.x,y:best.y});
   }
+  return (ok && picked.length===4) ? picked : null;
+}
+function tryAutoDetect(){
+  if(!state.cvReady){ alert('محرّك المعالجة غير جاهز بعد.'); return; }
+  if(!state.imgLoaded) return;
+  const picked = detectCornersOnCanvas(displayCanvas);
   const cs=document.getElementById('cornerStatus');
-  if(ok && picked.length===4){
+  if(picked){
     state.corners=picked; drawDots();
     cs.className='status ok'; cs.textContent='✅ تم كشف الأركان تلقائياً. راجعها ثم اضغط «صحّح البطاقة». إن كانت خاطئة، أعد التحديد يدوياً.';
   }else{
@@ -2111,6 +2126,106 @@ function gradeCore(srcMat, corners, drawVis){
 }
 
 // التصحيح اليدوي (صورة ملتقطة + أركان منقورة)
+/* ============================================================
+   وضع تصوير الدفعة: صوّر كل الأوراق ثم صحّح الكل دفعة واحدة
+   ============================================================ */
+state.batch = [];   // [{url, w, h}]
+function onBatchClick(){
+  if(!isKeyComplete()){ alert('أكمل مفتاح الإجابة لكل الأسئلة أولاً.'); return; }
+  if(!state.cvReady){ alert('محرّك المعالجة غير جاهز بعد. أمهله ثوانٍ.'); return; }
+  if(state.results.length && !confirm(`توجد ${toArabic(state.results.length)} نتيجة سابقة في السجل. ستُضاف نتائج الدفعة إليها (تراكمياً). متابعة؟`)) return;
+  stopLiveScan();
+  state.batch = [];
+  document.getElementById('batchPanel').style.display='block';
+  renderBatchStrip();
+  document.getElementById('batchInput').click();   // افتح الكاميرا للورقة الأولى
+}
+function onBatchPicked(ev){
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value = '';                            // للسماح بإعادة التقاط نفس الكاميرا
+  if(!file) return;
+  const img = new Image();
+  img.onload = ()=>{
+    state.batch.push({ url: img.src, w: img.naturalWidth, h: img.naturalHeight });
+    renderBatchStrip();
+  };
+  img.src = URL.createObjectURL(file);
+}
+function renderBatchStrip(){
+  const strip = document.getElementById('batchStrip');
+  const cnt = document.getElementById('batchCount');
+  const hint = document.getElementById('batchHint');
+  cnt.textContent = `${toArabic(state.batch.length)} ورقة`;
+  strip.innerHTML = state.batch.map((b,i)=>`
+    <div style="position:relative;width:64px;height:84px;border-radius:8px;overflow:hidden;border:1px solid var(--line)">
+      <img src="${b.url}" style="width:100%;height:100%;object-fit:cover">
+      <button onclick="removeBatchItem(${i})" style="position:absolute;top:2px;left:2px;width:20px;height:20px;border:none;border-radius:50%;background:rgba(220,38,38,.92);color:#fff;font-size:12px;line-height:1;cursor:pointer">✕</button>
+      <span style="position:absolute;bottom:0;right:0;background:rgba(15,118,110,.9);color:#fff;font-size:11px;padding:1px 5px;border-radius:6px 0 0 0">${toArabic(i+1)}</span>
+    </div>`).join('');
+  hint.textContent = state.batch.length
+    ? 'التقط بقية الأوراق ثم اضغط «صحّح الكل».'
+    : 'لم تُلتقط أوراق بعد. اضغط «التقاط ورقة».';
+  document.getElementById('btnBatchGrade').style.display = state.batch.length ? 'block' : 'none';
+}
+function removeBatchItem(i){ state.batch.splice(i,1); renderBatchStrip(); }
+function cancelBatch(){
+  state.batch = [];
+  document.getElementById('batchPanel').style.display='none';
+}
+// تصحيح كل أوراق الدفعة دفعة واحدة، مع جمع المتعثّرات
+async function gradeBatch(){
+  if(!state.batch.length){ alert('لا توجد أوراق في الدفعة.'); return; }
+  if(!state.cvReady){ alert('محرّك المعالجة غير جاهز.'); return; }
+  const hint = document.getElementById('batchHint');
+  let graded=0, needName=0, failed=0;
+  const failedItems=[];
+  // لوحة معالجة خارج الشاشة
+  const cvs = document.createElement('canvas');
+  const ctx = cvs.getContext('2d');
+  for(let i=0;i<state.batch.length;i++){
+    const b = state.batch[i];
+    hint.textContent = `جارٍ التصحيح… ${toArabic(i+1)}/${toArabic(state.batch.length)}`;
+    await new Promise(r=>setTimeout(r,30));   // إفساح المجال للواجهة
+    try{
+      const img = await loadImg(b.url);
+      const maxW = 1000;
+      const sc = Math.min(1, maxW/img.naturalWidth);
+      cvs.width = Math.round(img.naturalWidth*sc);
+      cvs.height = Math.round(img.naturalHeight*sc);
+      ctx.drawImage(img,0,0,cvs.width,cvs.height);
+      const corners = detectCornersOnCanvas(cvs);
+      if(!corners){ failed++; failedItems.push(b); continue; }
+      let src = cv.imread(cvs);
+      const { result } = gradeCore(src, corners, false);
+      src.delete();
+      const seat = result.seat || '';
+      const name = result.matchedName || '';
+      if(!name) needName++;
+      // منع التكرار بالباركود
+      let idx=-1;
+      if(seat){ idx = state.results.findIndex(r=> r.seat && normalizeSeat(r.seat)===normalizeSeat(seat)); }
+      const row = { ...result, name, seat, at:new Date().toLocaleString('ar-SA') };
+      if(idx>=0) state.results[idx]=row; else state.results.push(row);
+      graded++;
+    }catch(e){ failed++; failedItems.push(b); }
+  }
+  renderResults();
+  saveResultsToCloud();
+  // أبقِ المتعثّرات فقط في الشريط لإعادة المحاولة
+  state.batch = failedItems;
+  renderBatchStrip();
+  if(!failedItems.length){ document.getElementById('batchPanel').style.display='none'; }
+  else { hint.textContent = '⚠️ هذه الأوراق تعذّر كشف أركانها. صوّرها بإضاءة أفضل وأركان واضحة، أو صحّحها فردياً.'; }
+  let msg = `✅ صُحّحت ${toArabic(graded)} ورقة.`;
+  if(needName) msg += `\n⚠️ ${toArabic(needName)} منها بحاجة لتحديد الطالب (لم يُقرأ الباركود) — عدّلها في سجل النتائج.`;
+  if(failed) msg += `\n❌ ${toArabic(failed)} تعذّر كشف أركانها (بقيت في الشريط لإعادة المحاولة).`;
+  alert(msg);
+  if(graded) showTab('results');
+}
+function loadImg(url){
+  return new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=url; });
+}
+
 function gradeSheet(){
   if(!state.cvReady){ alert('محرّك المعالجة غير جاهز. ارفع البرنامج على موقعك ثم جرّب.'); return; }
   if(state.corners.length!==4){ alert('حدّد الأركان الأربعة أولاً.'); return; }
