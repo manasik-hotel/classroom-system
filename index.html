@@ -307,7 +307,6 @@
         <select id="gradeClassSel" onchange="onGradeClassChange()"><option value="">— كل الطلاب —</option></select>
       </label>
       <div class="row" style="margin-bottom:10px">
-        <button class="ghost" onclick="autoFillKeyDemo()">تعبئة تجريبية</button>
         <button class="ghost" onclick="clearKey()">مسح المفتاح</button>
       </div>
       <div id="keyGrid" class="keygrid"></div>
@@ -1309,11 +1308,8 @@ function onPickStudentResult(){
     document.getElementById('rName').value = `${st.name} · جلوس ${st.seat}`;
   }
 }
+function setKey(q,ci){ state.key[q] = (state.key[q]===ci? null : ci); buildKeyGrid(); }
 function clearKey(){ state.key = new Array(state.cfg.numQ).fill(null); buildKeyGrid(); }
-function autoFillKeyDemo(){
-  for(let q=0;q<state.cfg.numQ;q++) state.key[q] = q % state.meta[q].opts;
-  buildKeyGrid();
-}
 
 /* ============================================================
    إدارة الفصول والطلاب
