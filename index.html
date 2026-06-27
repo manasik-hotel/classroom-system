@@ -412,13 +412,19 @@
   <!-- ================= سجل الأعمال ================= -->
   <section id="panel-cloud" class="panel">
     <div class="card">
-      <h2><button class="collapseBtn" onclick="toggleCard('cardWlSetup',this)">+</button> إعداد بنود السجل <span class="sub">عدّل أسماء البنود وأوزانها والترويسة</span></h2>
+      <h2><button class="collapseBtn" onclick="toggleCard('cardWlHeader',this)">+</button> ترويسة السجل <span class="sub">بيانات ثابتة تظهر في رأس التقرير</span></h2>
+      <div id="cardWlHeader" style="display:none">
+        <div id="wlHeaderHost"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2><button class="collapseBtn" onclick="toggleCard('cardWlSetup',this)">+</button> إعداد بنود السجل <span class="sub">عدّل أسماء البنود وأوزانها وأخفِ ما لا تريد</span></h2>
       <div id="cardWlSetup" style="display:none">
         <div id="wlSetupHost"></div>
       </div>
     </div>
     <div class="card">
-      <h2>سجل الأعمال <span class="sub">حضور · تأخّر · بنود الفترات حسب الصف</span></h2>
+      <h2>سجل الأعمال <span class="sub">غياب · بنود الفترات حسب الصف</span></h2>
       <div id="cloudStatus" class="status info" style="margin-bottom:10px">جارٍ التهيئة…</div>
       <label class="field">عرض سجل الصف
         <select id="wlViewClass" onchange="renderWorkLog()"><option value="">— اختر الصف —</option></select>
@@ -426,11 +432,23 @@
       <div id="workLogHost"><div class="empty">اختر صفاً لعرض سجل أعماله.</div></div>
       <div class="row no-print" style="margin-top:10px">
         <button class="ghost" onclick="loadWorkLog(true)">🔄 تحديث السجل</button>
-        <button class="primary" style="background:#0b7a63" onclick="exportWorkLogView()">🖨️ تصدير السجل PDF</button>
+        <button class="primary" style="background:#0b7a63" onclick="openExportDialog('full')">🖨️ تصدير السجل PDF</button>
       </div>
+      <button class="ghost no-print" style="width:100%;margin-top:8px" onclick="openExportDialog('detailed')">📋 تصدير مفصّل (كل المحاولات — فترة واحدة)</button>
     </div>
   </section>
-</main>
+  </main>
+
+<!-- نافذة خيارات التصدير (اللون / الفترة) -->
+<div id="exportOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,30,28,.55);z-index:9999;overflow-y:auto;padding:16px">
+  <div style="max-width:460px;margin:50px auto;background:#fff;border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0" id="exportTitle">تصدير السجل</h2>
+      <button class="ghost" style="padding:6px 12px" onclick="closeExportDialog()">✕</button>
+    </div>
+    <div id="exportBody"></div>
+  </div>
+</div>
 
 <!-- نافذة سجل الطالب -->
 <div id="stRecordOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,30,28,.55);z-index:9999;overflow-y:auto;padding:16px">
@@ -1591,8 +1609,8 @@ function setAttendance(seat,status){
    ============================================================ */
 function workEntry(classCode, seat){
   if(!state.workLog[classCode]) state.workLog[classCode] = {};
-  if(!state.workLog[classCode][seat]) state.workLog[classCode][seat] = { events:[], exams:{}, bands:{} };
-  if(!state.workLog[classCode][seat].bands) state.workLog[classCode][seat].bands = {};
+  if(!state.workLog[classCode][seat]) state.workLog[classCode][seat] = { events:[], exams:{}, bands:{}, attempts:{} };
+  if(!state.workLog[classCode][seat].attempts) state.workLog[classCode][seat].attempts = {};
   return state.workLog[classCode][seat];
 }
 function todayStr(){ const d=new Date(); return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`; }
@@ -1669,99 +1687,190 @@ function renderWorkLog(){
   if(!studs.length){ host.innerHTML='<div class="empty">لا يوجد طلاب في هذا الصف.</div>'; return; }
   const log = state.workLog[code]||{};
   const cfg = state.workCfg;
-  const inp = (seat,id,val)=>`<input type="number" min="0" step="0.5" value="${val!=null?val:''}" onchange="editBand('${escapeHtml(seat)}','${id}',this.value)" style="width:52px;padding:4px;border:1px solid var(--line);border-radius:6px;font:inherit;text-align:center">`;
-  // رؤوس الأعمدة
-  let head = '<th>رقم الهوية</th><th>اسم الطالب</th><th>غياب</th><th>تأخّر</th>';
+  // رؤوس عمودين: الفترة (صف علوي) + البنود (صف سفلي)
+  let head1 = '<th rowspan="2">رقم الهوية</th><th rowspan="2">اسم الطالب</th>';
+  let head2 = '';
   cfg.periods.forEach(p=>{
-    p.items.forEach(it=>{ head += `<th style="font-size:11px">${escapeHtml(it.name)}<br><span style="color:var(--muted)">(${toArabic(it.max)})</span></th>`; });
-    head += `<th style="background:#0b7a63">مجموع<br>${escapeHtml(p.name)}<br><span style="opacity:.8">(${toArabic(periodTotal(p))})</span></th>`;
+    const vis = p.items.filter(it=>!it.hidden);
+    const span = 1 + vis.length + (p.groups?p.groups.length:0) + 1; // غياب + بنود + مجمّعات + مجموع
+    head1 += `<th colspan="${span}" style="background:#0b7a63">${escapeHtml(p.name)}</th>`;
+    head2 += `<th style="font-size:10px">أيام الغياب</th>`;
+    vis.forEach(it=>{ head2 += `<th style="font-size:10px">${escapeHtml(it.name)}<br><span style="color:var(--muted)">(${toArabic(it.max)})</span></th>`; });
+    (p.groups||[]).forEach(g=>{ head2 += `<th style="font-size:10px;background:#efe3e8">${escapeHtml(g.name)}<br><span style="color:var(--muted)">(${toArabic(groupMax(p,g))})</span></th>`; });
+    head2 += `<th style="font-size:10px;background:#0b7a63">مجموع الفترة<br><span style="opacity:.85">(${toArabic(periodTotal(p))})</span></th>`;
   });
-  head += `<th style="background:#0b7a63">${escapeHtml(cfg.final.name)}<br><span style="opacity:.8">(${toArabic(cfg.final.max)})</span></th>`;
-  head += '<th>ملاحظات</th>';
-  const colCount = 4 + cfg.periods.reduce((s,p)=>s+p.items.length+1,0) + 2;
-  let html='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="min-width:'+(colCount*70)+'px"><thead><tr>'+head+'</tr></thead><tbody>';
+  head1 += '<th rowspan="2">ملاحظات</th>';
+  let html='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="min-width:900px"><thead><tr>'+head1+'</tr><tr>'+head2+'</tr></thead><tbody>';
   studs.forEach(s=>{
-    const e = log[s.seat] || { events:[], exams:{}, bands:{} };
-    const bands = e.bands||{};
-    const abs = countStatus(e,'absent'), late = countStatus(e,'late');
+    const e = log[s.seat] || { events:[], attempts:{} };
     const lastNotes = (e.events||[]).filter(x=>x.note).slice(-1).map(x=>x.note).join(' / ');
     let cells = `
       <td style="font-weight:700"><span style="cursor:pointer;color:var(--teal-d);text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span></td>
-      <td style="text-align:right"><span style="cursor:pointer;color:var(--teal-d);font-weight:600;text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span></td>
-      <td style="color:${abs?'var(--bad)':'inherit'};font-weight:700">${toArabic(abs)}</td>
-      <td style="color:${late?'var(--warn)':'inherit'};font-weight:700">${toArabic(late)}</td>`;
+      <td style="text-align:right"><span style="cursor:pointer;color:var(--teal-d);font-weight:600;text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span></td>`;
     cfg.periods.forEach(p=>{
-      let ptot=0, any=false;
-      p.items.forEach(it=>{ const v=bands[it.id]; if(v!=null){ ptot+=(+v||0); any=true; } cells += `<td>${inp(s.seat,it.id,v)}</td>`; });
-      cells += `<td style="font-weight:800;color:var(--teal-d)">${any?toArabic(round1(ptot)):'—'}</td>`;
+      const absD = absenceDays(e);
+      cells += `<td style="color:${absD?'var(--bad)':'inherit'};font-weight:700">${toArabic(absD)}</td>`;
+      p.items.filter(it=>!it.hidden).forEach(it=>{
+        const v = itemValue(e, it);
+        const n = (e.attempts&&e.attempts[it.id]&&e.attempts[it.id].length)||0;
+        const disp = v!=null ? `<span style="font-weight:700">${toArabic(v)}</span>` : '<span style="color:#bbb">—</span>';
+        cells += `<td style="cursor:pointer" onclick="openBandEditor('${escapeHtml(s.seat)}','${it.id}')" title="اضغط للتعديل/إضافة محاولة">${disp}${n>1?`<br><span style="font-size:9px;color:var(--muted)">(${toArabic(n)} محاولات)</span>`:''}</td>`;
+      });
+      (p.groups||[]).forEach(g=>{ const gv=groupValue(e,p,g); cells += `<td style="background:#f6eef1;font-weight:800;color:#7a1f3d">${gv!=null?toArabic(gv):'—'}</td>`; });
+      const ps = periodSum(e,p);
+      cells += `<td style="background:#eef6f4;font-weight:800;color:var(--teal-d)">${ps!=null?toArabic(ps):'—'}</td>`;
     });
-    cells += `<td>${inp(s.seat,'final',bands.final)}</td>`;
     cells += `<td style="font-size:11px;color:var(--muted);text-align:right">${escapeHtml(lastNotes||'—')}</td>`;
     html += `<tr>${cells}</tr>`;
   });
   host.innerHTML = html+'</tbody></table></div>';
 }
-// تعديل قيمة بند يدوياً
-function editBand(seat, id, val){
+// محرّر محاولات بند لطالب: عرض/إضافة/حذف المحاولات (وزن نسبي)
+function openBandEditor(seat, itemId){
   const s = findStudent(seat); if(!s) return;
   const entry = workEntry(s.classCode, s.seat);
-  const num = val==='' ? null : round1(val);
-  if(num==null) delete entry.bands[id]; else entry.bands[id]=num;
-  renderWorkLog();
-  saveWorkLogToCloud();
+  let item=null, period=null;
+  state.workCfg.periods.forEach(p=>{ const it=p.items.find(x=>x.id===itemId); if(it){item=it;period=p;} });
+  if(!item) return;
+  if(!entry.attempts[itemId]) entry.attempts[itemId]=[];
+  const att = entry.attempts[itemId];
+  const rows = att.map((r,i)=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+    <span style="flex:1">محاولة ${toArabic(i+1)}: <b>${toArabic(round1(r*item.max))}</b> من ${toArabic(item.max)} <span style="color:var(--muted)">(${toArabic(Math.round(r*100))}٪)</span></span>
+    <button class="ghost" style="padding:4px 10px;color:var(--bad);border-color:var(--bad)" onclick="delAttempt('${escapeHtml(seat)}','${itemId}',${i})">حذف</button>
+  </div>`).join('') || '<div class="hint">لا محاولات بعد (الطالب يُعدّ غائباً في هذا البند).</div>';
+  const avg = itemRatioAvg(entry,itemId);
+  const body = document.getElementById('stRecordBody');
+  body.innerHTML = `<div style="text-align:right;font-weight:800;font-size:16px">${escapeHtml(item.name)} <span style="color:var(--muted);font-size:13px">(الوزن ${toArabic(item.max)})</span></div>
+    <div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:10px">${escapeHtml(s.name)} · ${escapeHtml(period.name)}</div>
+    <div style="margin-bottom:10px">${rows}</div>
+    <div style="padding:8px;background:#eef6f4;border-radius:8px;margin-bottom:10px;font-weight:700;color:var(--teal-d)">الدرجة النسبية الحالية: ${avg!=null?toArabic(round1(avg*item.max)):'—'} من ${toArabic(item.max)}</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <input id="newAttempt" type="number" min="0" max="${item.max}" step="0.5" placeholder="درجة من ${item.max}" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit">
+      <button class="primary" style="padding:9px 14px" onclick="addAttempt('${escapeHtml(seat)}','${itemId}')">إضافة</button>
+    </div>`;
+  document.getElementById('stRecordOverlay').style.display='block';
 }
-// واجهة إعداد بنود السجل (الأسماء/الأوزان/الترويسة المؤقّتة)
+function addAttempt(seat, itemId){
+  const s = findStudent(seat); if(!s) return;
+  let item=null; state.workCfg.periods.forEach(p=>{ const it=p.items.find(x=>x.id===itemId); if(it)item=it; });
+  if(!item) return;
+  const val = parseFloat(document.getElementById('newAttempt').value);
+  if(isNaN(val)){ alert('أدخل درجة صحيحة.'); return; }
+  const entry = workEntry(s.classCode, s.seat);
+  if(!entry.attempts[itemId]) entry.attempts[itemId]=[];
+  entry.attempts[itemId].push(Math.max(0, Math.min(1, val/(item.max||1))));
+  saveWorkLogToCloud();
+  openBandEditor(seat, itemId);
+  renderWorkLog();
+}
+function delAttempt(seat, itemId, idx){
+  const s = findStudent(seat); if(!s) return;
+  const entry = workEntry(s.classCode, s.seat);
+  if(entry.attempts[itemId]){ entry.attempts[itemId].splice(idx,1); if(!entry.attempts[itemId].length) delete entry.attempts[itemId]; }
+  saveWorkLogToCloud();
+  openBandEditor(seat, itemId);
+  renderWorkLog();
+}
+// واجهة إعداد بنود السجل (الأسماء/الأوزان/الإخفاء)
 function renderWlSetup(){
   const host = document.getElementById('wlSetupHost'); if(!host) return;
   const cfg = state.workCfg;
-  const fld = (label,key,val,ph)=>`<label class="field" style="margin-bottom:8px">${label}
-    <input value="${escapeHtml(val||'')}" placeholder="${ph||''}" onchange="setWlHeader('${key}',this.value)"></label>`;
-  let html = `<div style="font-weight:800;color:var(--teal-d);margin-bottom:6px">ترويسة السجل (مؤقّتة)</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-      ${fld('إدارة التعليم','edu',cfg.header.edu)}
-      ${fld('اسم المدرسة','school',cfg.header.school)}
-      ${fld('معلم المادة','teacher',cfg.header.teacher)}
-      ${fld('العام الدراسي','year',cfg.header.year)}
-      ${fld('الفصل الدراسي','term',cfg.header.term)}
-      ${fld('قائد المدرسة','principal',cfg.header.principal)}
-    </div>`;
+  let html = `<p class="hint" style="margin-top:0">عدّل أسماء البنود وأوزانها، وأخفِ ما لا تحتاجه. البنود المجمّعة وعمود أيام الغياب تُحسب تلقائياً ولا تُخفى. إخفاء بند يُحدّث المجاميع.</p>`;
   cfg.periods.forEach((p,pi)=>{
     html += `<div style="margin-top:14px;display:flex;align-items:center;gap:8px">
       <input value="${escapeHtml(p.name)}" onchange="setPeriodName(${pi},this.value)" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;font-weight:800;color:var(--teal-d)">
-      <span class="hint" style="white-space:nowrap">مجموع: <b>${toArabic(periodTotal(p))}</b></span>
+      <span class="hint" style="white-space:nowrap">المجموع الظاهر: <b>${toArabic(periodTotal(p))}</b></span>
     </div>
     <table style="width:100%;margin-top:6px;font-size:13px"><tbody>`;
     p.items.forEach((it,ii)=>{
-      html += `<tr>
+      html += `<tr style="${it.hidden?'opacity:.5':''}">
         <td><input value="${escapeHtml(it.name)}" onchange="setItemName(${pi},${ii},this.value)" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:7px;font:inherit"></td>
-        <td style="width:78px"><input type="number" min="0" value="${it.max}" onchange="setItemMax(${pi},${ii},this.value)" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:7px;font:inherit;text-align:center"></td>
+        <td style="width:64px"><input type="number" min="0" value="${it.max}" onchange="setItemMax(${pi},${ii},this.value)" style="width:100%;padding:6px;border:1px solid var(--line);border-radius:7px;font:inherit;text-align:center"></td>
+        <td style="width:84px"><button class="ghost" style="padding:6px 8px;font-size:12px;width:100%" onclick="toggleItemHidden(${pi},${ii})">${it.hidden?'👁️ إظهار':'🙈 إخفاء'}</button></td>
       </tr>`;
     });
     html += `</tbody></table>`;
+    // البنود المجمّعة (عرض فقط)
+    (p.groups||[]).forEach(g=>{
+      html += `<div style="margin-top:4px;padding:6px 10px;background:#f6eef1;border-radius:8px;font-size:12px;color:#7a1f3d">🔗 ${escapeHtml(g.name)} = مجموع تلقائي (${toArabic(groupMax(p,g))})</div>`;
+    });
   });
-  html += `<div style="margin-top:14px;display:flex;align-items:center;gap:8px">
-      <input value="${escapeHtml(cfg.final.name)}" onchange="setFinalName(this.value)" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;font-weight:800;color:var(--teal-d)">
-      <input type="number" min="0" value="${cfg.final.max}" onchange="setFinalMax(this.value)" style="width:78px;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;text-align:center">
-    </div>
-    <button class="ghost" style="margin-top:12px;width:100%" onclick="saveWlCfg()">💾 حفظ إعداد السجل</button>`;
+  html += `<button class="ghost" style="margin-top:14px;width:100%" onclick="saveWlCfg()">💾 حفظ إعداد السجل</button>`;
   host.innerHTML = html;
 }
-function setWlHeader(k,v){ state.workCfg.header[k]=v; }
 function setPeriodName(pi,v){ state.workCfg.periods[pi].name=v; }
 function setItemName(pi,ii,v){ state.workCfg.periods[pi].items[ii].name=v; }
-function setItemMax(pi,ii,v){ state.workCfg.periods[pi].items[ii].max=+v||0; renderWlSetup(); }
-function setFinalName(v){ state.workCfg.final.name=v; }
-function setFinalMax(v){ state.workCfg.final.max=+v||0; }
+function setItemMax(pi,ii,v){ state.workCfg.periods[pi].items[ii].max=+v||0; renderWlSetup(); renderWorkLog(); }
+function toggleItemHidden(pi,ii){ const it=state.workCfg.periods[pi].items[ii]; it.hidden=!it.hidden; renderWlSetup(); renderWorkLog(); }
 function saveWlCfg(){ saveStudentsToCloud(); renderWlSetup(); renderWorkLog(); alert('تم حفظ إعداد السجل.'); }
 
-// تصدير السجل PDF (الدفعة الثانية)
-function exportWorkLogView(){
-  const code = document.getElementById('wlViewClass') ? document.getElementById('wlViewClass').value : '';
-  if(!code){ alert('اختر صفاً أولاً لتصدير سجله.'); return; }
-  openWorkLogExport(code);
+// ---- ترويسة السجل الثابتة (محفوظة) ----
+function renderWlHeader(){
+  const host = document.getElementById('wlHeaderHost'); if(!host) return;
+  const h = state.workCfg.header;
+  const fld = (label,key)=>`<label class="field" style="margin-bottom:8px">${label}
+    <input value="${escapeHtml(h[key]||'')}" onchange="setWlHeader('${key}',this.value)"></label>`;
+  host.innerHTML = `<p class="hint" style="margin-top:0">تُحفظ هذه البيانات وتظهر ثابتة في رأس تقرير السجل. (المملكة العربية السعودية ووزارة التعليم ثابتتان دائماً.)</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      ${fld('إدارة التعليم','edu')}
+      ${fld('اسم المدرسة','school')}
+      ${fld('معلم المادة','teacher')}
+      ${fld('العام الدراسي','year')}
+      ${fld('الفصل الدراسي','term')}
+      ${fld('قائد المدرسة','principal')}
+    </div>
+    <button class="ghost" style="margin-top:12px;width:100%" onclick="saveWlHeader()">💾 حفظ الترويسة</button>`;
 }
-// يفتح صفحة بشكل السجل الرسمي (قابلة للتعديل) ثم زر طباعة/تصدير PDF
-function openWorkLogExport(code){
+function setWlHeader(k,v){ state.workCfg.header[k]=v; }
+function saveWlHeader(){ saveStudentsToCloud(); alert('تم حفظ ترويسة السجل.'); }
+
+// ---- خيارات التصدير (اللون / الفترة) ----
+let exportMode = 'full';
+const PALETTES = {
+  red:   { name:'أحمر (رسمي)', head:'#7a1f3d', soft:'#f3e7ec', soft2:'#efe3e8', line:'#b8889a', grp:'#f6eef1', grpTx:'#7a1f3d' },
+  blue:  { name:'أزرق', head:'#1f4e7a', soft:'#e7eef3', soft2:'#e3eaef', line:'#88a3b8', grp:'#eef3f6', grpTx:'#1f4e7a' },
+  green: { name:'أخضر', head:'#1f7a55', soft:'#e7f3ec', soft2:'#e3efe8', line:'#88b89e', grp:'#eef6f1', grpTx:'#1f7a55' },
+  gray:  { name:'رمادي', head:'#444', soft:'#eee', soft2:'#e6e6e6', line:'#aaa', grp:'#f0f0f0', grpTx:'#333' },
+  none:  { name:'بدون ألوان', head:'#fff', soft:'#fff', soft2:'#fff', line:'#999', grp:'#fff', grpTx:'#000', plain:true }
+};
+function openExportDialog(mode){
+  const code = document.getElementById('wlViewClass') ? document.getElementById('wlViewClass').value : '';
+  if(!code){ alert('اختر صفاً أولاً من «عرض سجل الصف».'); return; }
+  exportMode = mode;
+  document.getElementById('exportTitle').textContent = mode==='detailed' ? '📋 تصدير مفصّل' : '🖨️ تصدير السجل';
+  const body = document.getElementById('exportBody');
+  let periodPick = '';
+  if(mode==='detailed'){
+    periodPick = `<p class="hint" style="margin:0 0 6px">اختر الفترة:</p>
+      <select id="exPeriod" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:12px">
+        ${state.workCfg.periods.map((p,i)=>`<option value="${i}">${escapeHtml(p.name)}</option>`).join('')}
+      </select>`;
+  }
+  const colorBtns = Object.keys(PALETTES).map(k=>`<button class="ghost" style="padding:10px;border:2px solid ${PALETTES[k].plain?'#999':PALETTES[k].head};color:${PALETTES[k].plain?'#333':PALETTES[k].head};font-weight:700" onclick="runExport('${code}','${k}')">${PALETTES[k].name}</button>`).join('');
+  body.innerHTML = periodPick
+    + `<p class="hint" style="margin:0 0 6px">اختر لون التقرير:</p>
+       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">${colorBtns}</div>`;
+  document.getElementById('exportOverlay').style.display='block';
+}
+function closeExportDialog(){ document.getElementById('exportOverlay').style.display='none'; }
+function runExport(code, colorKey){
+  const pal = PALETTES[colorKey] || PALETTES.red;
+  let periodIdx = null;
+  if(exportMode==='detailed'){ const sel=document.getElementById('exPeriod'); periodIdx = sel?+sel.value:0; }
+  closeExportDialog();
+  if(exportMode==='detailed') openDetailedExport(code, periodIdx, pal);
+  else openWorkLogExport(code, pal);
+}
+
+// شعار وزارة التعليم كـSVG مضمّن (نفس نمط بطاقات الإجابة)
+function moeLogoInline(w){
+  const h=w*0.30, inner = moeLogoSVG(w/2, 0, w);
+  return `<svg width="${w}" height="${h+w*0.18}" viewBox="0 0 ${w} ${h+w*0.18}" xmlns="http://www.w3.org/2000/svg">${inner}</svg>`;
+}
+
+// ---- التصدير الكامل (شكل النموذج الرسمي) ----
+function openWorkLogExport(code, pal){
+  pal = pal || PALETTES.red;
   const cfg = state.workCfg, h = cfg.header;
   const studs = state.students.filter(s=>s.classCode===code);
   if(!studs.length){ alert('لا يوجد طلاب في هذا الصف.'); return; }
@@ -1769,92 +1878,124 @@ function openWorkLogExport(code){
   const className = classNameByCode(code)||'';
   const win = window.open('', '_blank');
   if(!win){ alert('فضلاً اسمح بالنوافذ المنبثقة للتصدير.'); return; }
-  // بناء رؤوس البنود
-  let bandHead1 = '', bandHead2 = '';
+  // رؤوس البنود (بنود ظاهرة + مجمّعات + مجموع) لكل فترة، مع عمود أيام الغياب
+  let head1='', head2='';
   cfg.periods.forEach(p=>{
-    bandHead1 += `<th colspan="${p.items.length+1}" class="pr">${escapeHtml(p.name)}</th>`;
-    p.items.forEach(it=> bandHead2 += `<th class="it">${escapeHtml(it.name)}<div class="mx">${toArabic(it.max)}</div></th>`);
-    bandHead2 += `<th class="tot">المجموع<div class="mx">${toArabic(periodTotal(p))}</div></th>`;
+    const vis=p.items.filter(it=>!it.hidden);
+    const span = 1 + vis.length + (p.groups?p.groups.length:0) + 1;
+    head1 += `<th colspan="${span}" class="pr">${escapeHtml(p.name)}</th>`;
+    head2 += `<th class="it">أيام الغياب</th>`;
+    vis.forEach(it=> head2 += `<th class="it">${escapeHtml(it.name)}<div class="mx">${toArabic(it.max)}</div></th>`);
+    (p.groups||[]).forEach(g=> head2 += `<th class="grp">${escapeHtml(g.name)}<div class="mx">${toArabic(groupMax(p,g))}</div></th>`);
+    head2 += `<th class="tot">مجموع الفترة<div class="mx">${toArabic(periodTotal(p))}</div></th>`;
   });
-  bandHead1 += `<th rowspan="2" class="fin">${escapeHtml(cfg.final.name)}<div class="mx">${toArabic(cfg.final.max)}</div></th>`;
-  // صفوف الطلاب (خلايا قابلة للتعديل عبر contenteditable)
   let rows='';
   studs.forEach((s,idx)=>{
-    const e = log[s.seat]||{bands:{}}; const b=e.bands||{};
+    const e = log[s.seat]||{events:[],attempts:{}};
     let tds = `<td class="num">${toArabic(idx+1)}</td><td class="nm" contenteditable>${escapeHtml(s.name)}</td>`;
     cfg.periods.forEach(p=>{
-      let ptot=0, any=false;
-      p.items.forEach(it=>{ const v=b[it.id]; if(v!=null){ptot+=(+v||0);any=true;} tds += `<td contenteditable>${v!=null?toArabic(v):''}</td>`; });
-      tds += `<td class="tot">${any?toArabic(round1(ptot)):''}</td>`;
+      tds += `<td>${toArabic(absenceDays(e))}</td>`;
+      p.items.filter(it=>!it.hidden).forEach(it=>{ const v=itemValue(e,it); tds += `<td contenteditable>${v!=null?toArabic(v):''}</td>`; });
+      (p.groups||[]).forEach(g=>{ const gv=groupValue(e,p,g); tds += `<td class="grp">${gv!=null?toArabic(gv):''}</td>`; });
+      const ps=periodSum(e,p); tds += `<td class="tot">${ps!=null?toArabic(ps):''}</td>`;
     });
-    tds += `<td contenteditable>${b.final!=null?toArabic(b.final):''}</td>`;
     rows += `<tr>${tds}</tr>`;
   });
-  const colsPerPeriod = cfg.periods.reduce((s,p)=>s+p.items.length+1,0);
-  const totalCols = 2 + colsPerPeriod + 1;
-  const html = `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
-  <title>سجل أعمال السنة — ${escapeHtml(className)}</title>
+  const logo = moeLogoInline(150);
+  win.document.write(buildExportHTML({ title:`سجل أعمال السنة — ${className}`, pal, logo, h, className, head1, head2, rows, landscape:true }));
+  win.document.close();
+}
+
+// ---- التصدير المفصّل (كل المحاولات لفترة واحدة) ----
+function openDetailedExport(code, periodIdx, pal){
+  pal = pal || PALETTES.red;
+  const cfg = state.workCfg, h = cfg.header, p = cfg.periods[periodIdx];
+  const studs = state.students.filter(s=>s.classCode===code);
+  if(!studs.length){ alert('لا يوجد طلاب في هذا الصف.'); return; }
+  const log = state.workLog[code]||{};
+  const className = classNameByCode(code)||'';
+  const win = window.open('', '_blank');
+  if(!win){ alert('فضلاً اسمح بالنوافذ المنبثقة للتصدير.'); return; }
+  const vis = p.items.filter(it=>!it.hidden);
+  // أقصى عدد محاولات لكل بند عبر طلاب الصف (لتوحيد الأعمدة)
+  const maxAtt = {};
+  vis.forEach(it=>{ let m=1; studs.forEach(s=>{ const e=log[s.seat]; const n=(e&&e.attempts&&e.attempts[it.id]&&e.attempts[it.id].length)||0; if(n>m)m=n; }); maxAtt[it.id]=m; });
+  let head1=`<th rowspan="2" class="num">م</th><th rowspan="2">اسم الطالب</th><th rowspan="2" class="it">أيام الغياب</th>`, head2='';
+  vis.forEach(it=>{
+    head1 += `<th colspan="${maxAtt[it.id]+1}" class="pr">${escapeHtml(it.name)} (${toArabic(it.max)})</th>`;
+    for(let k=0;k<maxAtt[it.id];k++) head2 += `<th class="it">م${toArabic(k+1)}</th>`;
+    head2 += `<th class="tot">النسبي</th>`;
+  });
+  let rows='';
+  studs.forEach((s,idx)=>{
+    const e=log[s.seat]||{events:[],attempts:{}};
+    let tds=`<td class="num">${toArabic(idx+1)}</td><td class="nm" contenteditable>${escapeHtml(s.name)}</td><td>${toArabic(absenceDays(e))}</td>`;
+    vis.forEach(it=>{
+      const att=(e.attempts&&e.attempts[it.id])||[];
+      for(let k=0;k<maxAtt[it.id];k++){ const r=att[k]; tds += `<td contenteditable>${r!=null?toArabic(round1(r*it.max)):''}</td>`; }
+      const v=itemValue(e,it); tds += `<td class="tot">${v!=null?toArabic(v):''}</td>`;
+    });
+    rows += `<tr>${tds}</tr>`;
+  });
+  const logo = moeLogoInline(150);
+  win.document.write(buildExportHTML({ title:`تفصيل ${p.name} — ${className}`, pal, logo, h, className, head1, head2, rows, landscape:true, subtitle:`تفصيل المحاولات — ${p.name}` }));
+  win.document.close();
+}
+
+// ---- مولّد صفحة HTML للتصدير (مشترك) ----
+function buildExportHTML(o){
+  const pal=o.pal;
+  const headBg = pal.plain ? '#fff' : pal.head;
+  const headTx = pal.plain ? '#000' : '#fff';
+  return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
+  <title>${escapeHtml(o.title)}</title>
   <style>
-    @page{ size:A4 landscape; margin:8mm; }
+    @page{ size:A4 ${o.landscape?'landscape':'portrait'}; margin:8mm; }
     *{box-sizing:border-box}
-    body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#3a2b3a;margin:0;padding:14px}
-    .bar{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #7a1f3d;padding-bottom:8px;margin-bottom:8px}
-    .right{font-size:12px;line-height:1.6;text-align:right}
+    body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#222;margin:0;padding:14px}
+    .bar{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${pal.line};padding-bottom:8px;margin-bottom:8px}
+    .right{font-size:12px;line-height:1.7;text-align:right}
     .center{text-align:center}
-    .center .logo{font-size:22px}
-    .center h1{margin:2px 0;font-size:20px;color:#7a1f3d}
-    .left{font-size:12px;line-height:1.7;text-align:right;min-width:230px}
+    .center h1{margin:4px 0 0;font-size:20px;color:${pal.plain?'#000':pal.head}}
+    .center .sub{font-size:12px;color:#666}
+    .left{font-size:12px;line-height:1.9;text-align:right;min-width:240px}
     .left .row{display:flex;gap:6px}
-    .left .lbl{color:#7a1f3d;font-weight:700;min-width:78px}
+    .left .lbl{color:${pal.plain?'#000':pal.head};font-weight:700;min-width:84px}
     .left .val{flex:1;border-bottom:1px dotted #aaa;min-height:16px}
-    table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
-    th,td{border:1px solid #b8889a;padding:3px;text-align:center}
-    th{background:#f3e7ec;color:#7a1f3d}
-    th.pr{background:#7a1f3d;color:#fff;font-size:13px}
-    th.it{font-size:10px;font-weight:600}
-    th.tot,td.tot{background:#efe3e8;font-weight:800}
-    th.fin{background:#7a1f3d;color:#fff;vertical-align:middle}
-    .mx{display:inline-block;margin-top:2px;background:#fff;color:#7a1f3d;border:1px solid #7a1f3d;border-radius:50%;padding:0 5px;font-size:10px}
-    td.nm{text-align:right;min-width:130px;font-weight:600}
-    td.num{width:26px;color:#888}
-    td[contenteditable]:focus{outline:2px solid #7a1f3d;background:#fff7fb}
-    .toolbar{position:sticky;top:0;background:#fff;padding:8px 0;margin-bottom:6px;display:flex;gap:8px}
-    .toolbar button{padding:9px 16px;border:none;border-radius:8px;font:inherit;font-weight:700;cursor:pointer}
-    .btn-print{background:#0b7a63;color:#fff}
-    .btn-hint{font-size:12px;color:#777;align-self:center}
+    table{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:6px}
+    th,td{border:1px solid ${pal.line};padding:3px;text-align:center}
+    th{background:${pal.soft};color:${pal.plain?'#000':pal.head}}
+    th.pr{background:${headBg};color:${headTx};font-size:12px}
+    th.it{font-size:9.5px;font-weight:600}
+    th.tot,td.tot{background:${pal.soft2};font-weight:800}
+    th.grp,td.grp{background:${pal.grp};color:${pal.grpTx};font-weight:700}
+    .mx{display:inline-block;margin-top:2px;background:#fff;color:${pal.plain?'#000':pal.head};border:1px solid ${pal.line};border-radius:50%;padding:0 5px;font-size:9px}
+    td.nm{text-align:right;min-width:120px;font-weight:600}
+    td.num{width:24px;color:#888}
+    td[contenteditable]:focus{outline:2px solid ${pal.line};background:#fffef7}
+    .toolbar{position:sticky;top:0;background:#fff;padding:8px 0;margin-bottom:6px;display:flex;gap:8px;border-bottom:1px solid #eee}
+    .toolbar button{padding:9px 16px;border:none;border-radius:8px;font:inherit;font-weight:700;cursor:pointer;background:${pal.plain?'#444':pal.head};color:#fff}
+    .toolbar .hint{font-size:12px;color:#777;align-self:center}
     @media print{ .toolbar{display:none} body{padding:0} }
   </style></head><body>
-  <div class="toolbar no-print">
-    <button class="btn-print" onclick="window.print()">🖨️ تصدير / طباعة PDF</button>
-    <span class="btn-hint">يمكنك تعديل أي خلية مباشرة قبل التصدير. اختر «حفظ كـ PDF» من نافذة الطباعة.</span>
+  <div class="toolbar">
+    <button onclick="window.print()">🖨️ تصدير / طباعة PDF</button>
+    <span class="hint">يمكنك تعديل أي خلية قبل التصدير، ثم اختر «حفظ كـ PDF» من نافذة الطباعة.</span>
   </div>
   <div class="bar">
-    <div class="right">
-      المملكة العربية السعودية<br>وزارة التعليم<br>${escapeHtml(h.edu||'إدارة التعليم')}<br>${escapeHtml(h.school||'المدرسة')}
-    </div>
-    <div class="center">
-      <div class="logo">📋</div>
-      <h1>سجل أعمال السنة</h1>
-    </div>
+    <div class="right">المملكة العربية السعودية<br>وزارة التعليم<br>${escapeHtml(o.h.edu||'')}<br>${escapeHtml(o.h.school||'')}</div>
+    <div class="center">${o.logo}<h1>سجل أعمال السنة</h1>${o.subtitle?`<div class="sub">${escapeHtml(o.subtitle)}</div>`:''}</div>
     <div class="left">
       <div class="row"><span class="lbl">المادة</span><span class="val">${escapeHtml(state.cfg.subject||'')}</span></div>
-      <div class="row"><span class="lbl">الصف</span><span class="val">${escapeHtml(className)}</span></div>
-      <div class="row"><span class="lbl">معلم المادة</span><span class="val">${escapeHtml(h.teacher||'')}</span></div>
-      <div class="row"><span class="lbl">العام الدراسي</span><span class="val">${escapeHtml(h.year||'')}</span></div>
-      <div class="row"><span class="lbl">الفصل الدراسي</span><span class="val">${escapeHtml(h.term||'')}</span></div>
-      <div class="row"><span class="lbl">قائد المدرسة</span><span class="val">${escapeHtml(h.principal||'')}</span></div>
+      <div class="row"><span class="lbl">الصف</span><span class="val">${escapeHtml(o.className)}</span></div>
+      <div class="row"><span class="lbl">معلم المادة</span><span class="val">${escapeHtml(o.h.teacher||'')}</span></div>
+      <div class="row"><span class="lbl">العام الدراسي</span><span class="val">${escapeHtml(o.h.year||'')}</span></div>
+      <div class="row"><span class="lbl">الفصل الدراسي</span><span class="val">${escapeHtml(o.h.term||'')}</span></div>
+      <div class="row"><span class="lbl">قائد المدرسة</span><span class="val">${escapeHtml(o.h.principal||'')}</span></div>
     </div>
   </div>
-  <table>
-    <thead>
-      <tr><th rowspan="2" class="num">م</th><th rowspan="2">اسم الطالب</th>${bandHead1}</tr>
-      <tr>${bandHead2}</tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>
+  <table><thead><tr>${o.head1}</tr><tr>${o.head2}</tr></thead><tbody>${o.rows}</tbody></table>
   </body></html>`;
-  win.document.write(html);
-  win.document.close();
 }
 
 // نافذة سجل الطالب: تواريخ الغياب/التأخر/الحضور وملاحظاتها
@@ -2937,7 +3078,7 @@ function showTab(t){
   });
   // عند دخول تبويب الطلاب: كل الأقسام مصغّرة افتراضياً
   if(t==='students') collapseStudentCards();
-  if(t==='cloud'){ renderWlSetup(); renderWorkLog(); }
+  if(t==='cloud'){ renderWlHeader(); renderWlSetup(); renderWorkLog(); }
 }
 function collapseStudentCards(){
   ['cardClasses','cardAddStudent','cardImport','cardStudents'].forEach(id=>{
@@ -2970,25 +3111,57 @@ state.workLog = {};
 // إعداد سجل الأعمال الرسمي: فترتان × بنود قابلة للتعديل (اسم + وزن) + اختبار نهائي + ترويسة مؤقّتة
 function defaultPeriodItems(prefix){
   return [
-    { id:prefix+'_attend', name:'الحضور', max:5 },
-    { id:prefix+'_part',   name:'المشاركة والأنشطة الصفية', max:5 },
-    { id:prefix+'_hw',     name:'الواجبات والمهام المنزلية', max:5 },
-    { id:prefix+'_proj',   name:'المشروعات والبحث', max:5 },
-    { id:prefix+'_file',   name:'ملف الأعمال', max:10 },
-    { id:prefix+'_exam',   name:'اختبار الفترة', max:20 },
+    { id:prefix+'_attend', name:'الحضور', max:10 },
+    { id:prefix+'_part',   name:'المشاركة والتفاعل والأنشطة', max:10 },
+    { id:prefix+'_hw',     name:'الواجبات والتطبيقات الصفية', max:10 },
+    { id:prefix+'_proj',   name:'المشروعات والبحث', max:10 },
+    { id:prefix+'_app',    name:'اختبار الفترة تطبيقي', max:35 },
+    { id:prefix+'_theory', name:'اختبار الفترة نظري', max:25 },
+  ];
+}
+// البنود المجمّعة لكل فترة (محسوبة تلقائياً، لا تُدخل ولا تُخفى)
+function periodGroups(prefix){
+  return [
+    { id:prefix+'_g1', name:'المهام الأدائية والمشاركة والتفاعل', parts:[prefix+'_attend',prefix+'_part',prefix+'_hw',prefix+'_proj'] },
+    { id:prefix+'_g2', name:'تقويمات وتحريرية وعملية', parts:[prefix+'_app',prefix+'_theory'] },
   ];
 }
 state.workCfg = {
   periods: [
-    { name:'الفترة الأولى', items: defaultPeriodItems('p1') },
-    { name:'الفترة الثانية', items: defaultPeriodItems('p2') },
+    { name:'الفترة الأولى', items: defaultPeriodItems('p1'), groups: periodGroups('p1') },
+    { name:'الفترة الثانية', items: defaultPeriodItems('p2'), groups: periodGroups('p2') },
   ],
-  final: { name:'الاختبار النهائي', max:50 },
-  // حقول الترويسة المؤقّتة (تُنقل لاحقاً لإعدادات النظام)
   header: { edu:'', school:'', teacher:'', year:'', term:'', principal:'' }
 };
-// مجموع وزن الفترة (يتحدّث تلقائياً عند تعديل الأوزان)
-function periodTotal(p){ return (p.items||[]).reduce((s,it)=>s+(+it.max||0),0); }
+// مجموع وزن بنود الفترة الظاهرة (يتجاهل المخفيّة)
+function periodTotal(p){ return (p.items||[]).filter(it=>!it.hidden).reduce((s,it)=>s+(+it.max||0),0); }
+// وزن بند مجمّع = مجموع أوزان أجزائه الظاهرة
+function groupMax(p, g){ return g.parts.reduce((s,id)=>{ const it=p.items.find(x=>x.id===id); return s+(it&&!it.hidden?(+it.max||0):0); },0); }
+// متوسّط المحاولات النسبي لبند (0..1) أو null إن لا محاولات (غائب)
+function itemRatioAvg(entry, id){
+  const a = entry.attempts && entry.attempts[id];
+  if(a && a.length){ const s=a.reduce((x,y)=>x+(+y||0),0); return s/a.length; }
+  return null;
+}
+// قيمة بند للطالب = المتوسّط النسبي × وزن البند (أو null إن غائب)
+function itemValue(entry, item){
+  const r = itemRatioAvg(entry, item.id);
+  return r==null ? null : round1(r*(+item.max||0));
+}
+// قيمة بند مجمّع = مجموع قيم أجزائه الظاهرة (null إن كلها غائبة)
+function groupValue(entry, p, g){
+  let sum=0, any=false;
+  g.parts.forEach(id=>{ const it=p.items.find(x=>x.id===id); if(!it||it.hidden) return; const v=itemValue(entry,it); if(v!=null){ sum+=v; any=true; } });
+  return any ? round1(sum) : null;
+}
+// مجموع الفترة = مجموع قيم البنود الفردية الظاهرة (null إن كلها غائبة)
+function periodSum(entry, p){
+  let sum=0, any=false;
+  (p.items||[]).forEach(it=>{ if(it.hidden) return; const v=itemValue(entry,it); if(v!=null){ sum+=v; any=true; } });
+  return any ? round1(sum) : null;
+}
+// عدد أيام الغياب (تلقائي من سجل الحضور)
+function absenceDays(entry){ return (entry.events||[]).filter(e=>e.status==='absent').length; }
 function setCloudStatus(kind, msg){
   const el = document.getElementById('cloudStatus');
   if(!el) return; el.className = 'status '+kind; el.textContent = msg;
@@ -3078,7 +3251,7 @@ function renderExams(){
       <button class="del" onclick="deleteExam('${e.id}')" title="حذف">×</button>
     </div>`).join('');
 }
-/* ---- حفظ الدرجات إلى سجل الأعمال عبر بنود الفترات الرسمية ---- */
+/* ---- حفظ الدرجات إلى سجل الأعمال (وزن نسبي بمحاولات متعددة) ---- */
 let pendingGrade = null;
 function round1(x){ return Math.round((+x||0)*10)/10; }
 function saveGradesToRecord(){
@@ -3097,57 +3270,44 @@ function gradeTypeStep(step, data){
   const btn = (label,onclick,bg)=>`<button class="primary" style="width:100%;margin-bottom:8px;${bg||''}" onclick="${onclick}">${label}</button>`;
   const cfg = state.workCfg;
   if(step==='root'){
-    body.innerHTML = `<p class="hint" style="margin-top:0">اختر الفترة أو الاختبار النهائي:</p>`
-      + cfg.periods.map((p,pi)=>btn(`📅 ${escapeHtml(p.name)}`, `gradeTypeStep('item',{pi:${pi}})`)).join('')
-      + btn(`🏁 ${escapeHtml(cfg.final.name)} (${toArabic(cfg.final.max)})`, `prepWeigh({final:true})`, 'background:#0b7a63');
+    body.innerHTML = `<p class="hint" style="margin-top:0">اختر الفترة:</p>`
+      + cfg.periods.map((p,pi)=>btn(`📅 ${escapeHtml(p.name)}`, `gradeTypeStep('item',{pi:${pi}})`)).join('');
   } else if(step==='item'){
     const p = cfg.periods[data.pi];
     body.innerHTML = `<p class="hint" style="margin-top:0">اختر البند في «${escapeHtml(p.name)}»:</p>`
-      + p.items.map(it=>btn(`${escapeHtml(it.name)} (${toArabic(it.max)})`, `prepWeigh({pi:${data.pi},id:'${it.id}'})`)).join('')
+      + p.items.filter(it=>!it.hidden).map(it=>btn(`${escapeHtml(it.name)} (${toArabic(it.max)})`, `prepWeigh({pi:${data.pi},id:'${it.id}'})`)).join('')
       + btn('↩︎ رجوع', `gradeTypeStep('root')`, 'background:#6b7280');
   } else if(step==='weigh'){
     const it = pendingGrade.item, r0 = state.results[0];
-    const weighted = r0.total ? (r0.correct/r0.total)*it.max : 0;
+    const ratio0 = r0.total ? r0.correct/r0.total : 0;
     body.innerHTML = `
       <div style="padding:10px;background:#eef6f4;border-radius:10px;margin-bottom:10px">
         <div style="font-weight:800;color:var(--teal-d)">${escapeHtml(it.name)} — الوزن ${toArabic(it.max)}</div>
-        <div class="hint" style="margin:6px 0 0">مثال (الطالب الأول): الدرجة الكلّية <b>${r0.correct}/${r0.total}</b>.<br>
-        عند التحويل للوزن: (${r0.correct}÷${r0.total}) × ${it.max} = <b>${toArabic(round1(weighted))}</b> من ${toArabic(it.max)}.</div>
-      </div>
-      <p class="hint" style="margin-top:0">كيف تُسجَّل الدرجات؟</p>`
-      + btn('⚖️ تحويل للوزن (موصى به)', `commitBandGrades(true)`)
-      + btn('📋 تسجيل كما هي (الدرجة الخام)', `commitBandGrades(false)`, 'background:#6b7280')
+        <div class="hint" style="margin:6px 0 0">ستُضاف هذه الدرجات كـ<b>محاولة جديدة</b> (لا تُحذف السابقة). تُحسب درجة كل طالب بالوزن النسبي = متوسّط محاولاته × ${toArabic(it.max)}.<br>
+        مثال (الطالب الأول): ${r0.correct}/${r0.total} → نسبة ${toArabic(Math.round(ratio0*100))}٪. والطالب الذي تُترك خانته فارغة يُعدّ غائباً فلا تُحسب له هذه المحاولة.</div>
+      </div>`
+      + btn('✅ إضافة هذه المحاولة', `commitBandGrades()`)
       + btn('↩︎ رجوع', `gradeTypeStep('root')`, 'background:#9aa');
   }
 }
-// تجهيز خطوة التحويل بعد اختيار البند
 function prepWeigh(target){
-  let item;
-  if(target.final){ item = { id:'final', name:state.workCfg.final.name, max:state.workCfg.final.max }; }
-  else { const p=state.workCfg.periods[target.pi]; item = p.items.find(x=>x.id===target.id); }
+  const p=state.workCfg.periods[target.pi]; const item = p.items.find(x=>x.id===target.id);
   if(!item){ alert('بند غير صالح.'); return; }
   pendingGrade = { target, item };
   gradeTypeStep('weigh');
 }
-// تنفيذ الحفظ في بند السجل (تحويل للوزن أو خام)
-function commitBandGrades(convert){
+// إضافة محاولة نسبية لكل طالب صُحّحت ورقته
+function commitBandGrades(){
   if(!pendingGrade) return;
   const item = pendingGrade.item;
-  // كشف التكرار
-  let exists=false;
-  for(const r of state.results){
-    const st=findStudent(r.seat); if(!st) continue;
-    const e=(state.workLog[st.classCode]&&state.workLog[st.classCode][st.seat]);
-    if(e && e.bands && e.bands[item.id]!=null){ exists=true; break; }
-  }
-  if(exists && !confirm(`سُجّل سابقاً «${item.name}» لبعض الطلاب. هل تريد تحديث القيم الموجودة بالدرجات الجديدة؟`)) return;
   let matched=0, unmatched=0;
   state.results.forEach(r=>{
     const st=findStudent(r.seat); if(!st){ unmatched++; return; }
     const entry=workEntry(st.classCode, st.seat);
-    if(!entry.bands) entry.bands={};
-    let val = convert ? (r.total ? (r.correct/r.total)*item.max : 0) : r.correct;
-    entry.bands[item.id] = round1(val);
+    if(!entry.attempts) entry.attempts={};
+    if(!entry.attempts[item.id]) entry.attempts[item.id]=[];
+    const ratio = r.total ? r.correct/r.total : 0;
+    entry.attempts[item.id].push(round1(ratio*100)/100);   // نسبة 0..1
     matched++;
   });
   saveWorkLogToCloud();
@@ -3157,7 +3317,7 @@ function commitBandGrades(convert){
   state.results = [];
   renderResults();
   saveResultsToCloud();
-  let msg = `تم تسجيل «${item.name}» في سجل الأعمال (${convert?'محوّلة للوزن':'درجة خام'}).\nطُوبق ${toArabic(matched)} طالباً`;
+  let msg = `أُضيفت محاولة «${item.name}» (وزن نسبي).\nطُوبق ${toArabic(matched)} طالباً`;
   if(unmatched) msg += ` · ${toArabic(unmatched)} غير مسجّل`;
   alert(msg);
   showTab('cloud');
