@@ -319,7 +319,12 @@
       <button id="btnCapture" class="primary" onclick="onCaptureClick()">📷 التقاط / اختيار صورة (ورقة واحدة)</button>
       <button id="btnLive" class="ghost" style="margin-top:10px" onclick="onLiveClick()">📹 مسح مباشر متعدد — وجّه الكاميرا فقط</button>
       <button id="btnBatch" class="ghost" style="margin-top:10px" onclick="onBatchClick()">📚 تصوير دفعة — صوّر كل الأوراق ثم صحّح الكل</button>
+      <button id="btnUploadImgs" class="ghost" style="margin-top:10px" onclick="onUploadImagesClick()">🖼️ رفع عدة صور — اختر صور الأوراق من المعرض</button>
+      <button id="btnUploadPdf" class="ghost" style="margin-top:10px" onclick="onUploadPdfClick()">📄 رفع ملف PDF — يقرأ النظام صفحاته</button>
+      <button id="btnSnap" class="ghost" style="margin-top:10px" onclick="onSnapClick()">📸 التقاط بنقرة — كاميرا مفتوحة وتلتقط بضغطة</button>
       <input id="batchInput" type="file" accept="image/*" capture="environment" style="display:none" onchange="onBatchPicked(event)">
+      <input id="imagesInput" type="file" accept="image/*" multiple style="display:none" onchange="onImagesPicked(event)">
+      <input id="pdfInput" type="file" accept="application/pdf" style="display:none" onchange="onPdfPicked(event)">
       <div id="batchPanel" style="display:none;margin-top:12px;padding:12px;background:#f4faf8;border:1px solid var(--teal-l);border-radius:12px">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <strong style="color:var(--teal-d)">📚 دفعة التصوير</strong>
@@ -339,6 +344,7 @@
           <canvas id="liveOverlay" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></canvas>
         </div>
         <div id="liveStatus" class="status info">وجّه الكاميرا نحو البطاقة كاملةً مع ظهور المربعات الأربعة.</div>
+        <button id="btnSnapCapture" style="display:none;width:100%;margin-top:8px;padding:16px;font-size:17px;font-weight:800;background:var(--ok);color:#fff;border:none;border-radius:12px;cursor:pointer" onclick="snapGrade()">📸 التقاط وتصحيح هذه الورقة</button>
         <div class="resultbox" style="margin-top:8px">
           <div><b id="liveCount" style="color:var(--teal-d)">٠</b><span>تم مسحها</span></div>
           <div><b id="liveLast" style="color:var(--ok)">—</b><span>آخر درجة</span></div>
@@ -1288,8 +1294,9 @@ function isKeyComplete(){
 function updateGradeButtons(){
   const ok = isKeyComplete();
   const bc = document.getElementById('btnCapture'), bl = document.getElementById('btnLive'), bb = document.getElementById('btnBatch');
+  const bu = document.getElementById('btnUploadImgs'), bp = document.getElementById('btnUploadPdf'), bs = document.getElementById('btnSnap');
   const warn = document.getElementById('keyWarn');
-  [bc,bl,bb].forEach(b=>{ if(b){ b.disabled=!ok; b.style.opacity=ok?'1':'.5'; b.style.cursor=ok?'pointer':'not-allowed'; } });
+  [bc,bl,bb,bu,bp,bs].forEach(b=>{ if(b){ b.disabled=!ok; b.style.opacity=ok?'1':'.5'; b.style.cursor=ok?'pointer':'not-allowed'; } });
   if(warn) warn.style.display = ok ? 'none' : 'block';
 }
 function onCaptureClick(){
@@ -1299,6 +1306,7 @@ function onCaptureClick(){
 }
 function onLiveClick(){
   if(!isKeyComplete()){ alert('أكمل مفتاح الإجابة لكل الأسئلة أولاً.'); return; }
+  if(!confirm('📹 المسح المباشر المتعدّد:\n\nتحتاج هذه الخاصية ثباتاً في الإضاءة ودقّةً عاليةً في الكاميرا، لأنها تلتقط تلقائياً أثناء التمرير.\n\nللحصول على أفضل دقّة استخدم «التقاط بنقرة» أو «تصوير دفعة».\n\nهل تريد المتابعة بالمسح المباشر؟')) return;
   if(state.results.length && !confirm(`توجد ${toArabic(state.results.length)} نتيجة سابقة في السجل. سيُضاف المسح الجديد إليها (تراكمياً). متابعة؟`)) return;
   startLiveScan();
 }
@@ -2140,6 +2148,84 @@ function onBatchClick(){
   renderBatchStrip();
   document.getElementById('batchInput').click();   // افتح الكاميرا للورقة الأولى
 }
+// بدء دفعة (مشتركة لرفع الصور/الـPDF) — تتحقّق وتفتح اللوحة
+function startBatchSession(){
+  if(!isKeyComplete()){ alert('أكمل مفتاح الإجابة لكل الأسئلة أولاً.'); return false; }
+  if(!state.cvReady){ alert('محرّك المعالجة غير جاهز بعد. أمهله ثوانٍ.'); return false; }
+  if(state.results.length && !confirm(`توجد ${toArabic(state.results.length)} نتيجة سابقة في السجل. ستُضاف نتائج الدفعة إليها (تراكمياً). متابعة؟`)) return false;
+  stopLiveScan();
+  document.getElementById('batchPanel').style.display='block';
+  return true;
+}
+// رفع عدة صور دفعة واحدة
+function onUploadImagesClick(){
+  if(!startBatchSession()) return;
+  document.getElementById('imagesInput').click();
+}
+function onImagesPicked(ev){
+  const files = Array.from(ev.target.files||[]);
+  ev.target.value='';
+  if(!files.length) return;
+  let pending = files.length;
+  files.forEach(f=>{
+    const img = new Image();
+    img.onload = ()=>{ state.batch.push({ url:img.src, w:img.naturalWidth, h:img.naturalHeight }); if(--pending===0) renderBatchStrip(); };
+    img.onerror = ()=>{ if(--pending===0) renderBatchStrip(); };
+    img.src = URL.createObjectURL(f);
+  });
+  renderBatchStrip();
+}
+// رفع ملف PDF — يقرأ النظام صفحاته (تحميل كسول لمكتبة PDF.js)
+function onUploadPdfClick(){
+  if(!startBatchSession()) return;
+  document.getElementById('pdfInput').click();
+}
+function onPdfPicked(ev){
+  const file = ev.target.files && ev.target.files[0];
+  ev.target.value='';
+  if(!file) return;
+  const hint = document.getElementById('batchHint');
+  hint.textContent = 'جارٍ قراءة ملف PDF…';
+  ensurePdfJs().then(async (pdfjsLib)=>{
+    try{
+      const buf = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      for(let p=1; p<=pdf.numPages; p++){
+        hint.textContent = `جارٍ استخراج صفحات PDF… ${toArabic(p)}/${toArabic(pdf.numPages)}`;
+        const page = await pdf.getPage(p);
+        const viewport = page.getViewport({ scale: 2 });   // دقّة جيدة للتصحيح
+        const c = document.createElement('canvas');
+        c.width = viewport.width; c.height = viewport.height;
+        await page.render({ canvasContext: c.getContext('2d'), viewport }).promise;
+        const url = c.toDataURL('image/jpeg', 0.92);
+        state.batch.push({ url, w:c.width, h:c.height });
+        renderBatchStrip();
+      }
+      hint.textContent = `تم استخراج ${toArabic(pdf.numPages)} صفحة. اضغط «صحّح الكل».`;
+    }catch(e){
+      hint.textContent = '⚠️ تعذّر قراءة ملف PDF. تأكّد أنه ملف صحيح غير محمي.';
+    }
+  }).catch(()=>{ hint.textContent='⚠️ تعذّر تحميل قارئ PDF. تحقّق من الاتصال بالإنترنت.'; });
+}
+// تحميل كسول لمكتبة PDF.js (مرة واحدة فقط)
+let _pdfjsPromise = null;
+function ensurePdfJs(){
+  if(window.pdfjsLib) return Promise.resolve(window.pdfjsLib);
+  if(_pdfjsPromise) return _pdfjsPromise;
+  _pdfjsPromise = new Promise((res,rej)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = ()=>{
+      try{
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        res(window.pdfjsLib);
+      }catch(e){ rej(e); }
+    };
+    s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  return _pdfjsPromise;
+}
 function onBatchPicked(ev){
   const file = ev.target.files && ev.target.files[0];
   ev.target.value = '';                            // للسماح بإعادة التقاط نفس الكاميرا
@@ -2433,7 +2519,7 @@ function detectFiducials(srcMat){
 const live = { stream:null, raf:null, busy:false, locked:false, stableHit:0, missCount:0, count:0, audio:null };
 let frameCanvas, frameCtx;
 
-async function startLiveScan(){
+async function startLiveScan(snap){
   if(!state.cvReady){ alert('محرّك المعالجة غير جاهز بعد. انتظر رسالة «جاهز» الخضراء.'); return; }
   if(state.key.every(k=>k===null)){
     if(!confirm('لم تُدخل مفتاح الإجابة. بدون مفتاح ستُحسب كل الإجابات خطأً. المتابعة؟')) return;
@@ -2453,15 +2539,42 @@ async function startLiveScan(){
   document.getElementById('gradeArea').style.display='none';
   document.getElementById('lastResult').style.display='none';
   document.getElementById('liveWrap').style.display='block';
+  live.snapMode = !!snap;
+  document.getElementById('btnSnapCapture').style.display = snap ? 'block' : 'none';
   live.locked=false; live.stableHit=0; live.missCount=0; live.busy=false;
-  setLiveStatus('info','وجّه الكاميرا نحو البطاقة كاملةً مع ظهور المربعات الأربعة.');
+  setLiveStatus('info', snap
+    ? 'وجّه الكاميرا حتى تظهر المربعات الأربعة خضراء، ثم اضغط «التقاط وتصحيح».'
+    : 'وجّه الكاميرا نحو البطاقة كاملةً مع ظهور المربعات الأربعة.');
   live.raf = requestAnimationFrame(liveLoop);
+}
+function onSnapClick(){
+  if(!isKeyComplete()){ alert('أكمل مفتاح الإجابة لكل الأسئلة أولاً.'); return; }
+  if(state.results.length && !confirm(`توجد ${toArabic(state.results.length)} نتيجة سابقة في السجل. سيُضاف الالتقاط الجديد إليها (تراكمياً). متابعة؟`)) return;
+  startLiveScan(true);
+}
+// التقاط الإطار الحالي وتصحيحه فوراً (وضع النقرة)
+function snapGrade(){
+  if(!live.stream || !live.snapMode) return;
+  const video=document.getElementById('liveVideo');
+  if(!video.videoWidth){ return; }
+  if(!frameCanvas){ frameCanvas=document.createElement('canvas'); frameCtx=frameCanvas.getContext('2d'); }
+  const vw=video.videoWidth, vh=video.videoHeight;
+  frameCanvas.width=vw; frameCanvas.height=vh;
+  frameCtx.drawImage(video,0,0,vw,vh);
+  let src=cv.imread(frameCanvas);
+  const corners=detectFiducials(src);
+  if(!corners){ src.delete(); setLiveStatus('warn','⚠️ لم تظهر الأركان الأربعة. قرّب الورقة وثبّت الإضاءة ثم أعد الالتقاط.'); if(navigator.vibrate) navigator.vibrate(200); return; }
+  const { result } = gradeCore(src, corners, false);
+  src.delete();
+  onLiveCaptured(result);   // يضيف للنتائج مع منع التكرار بالباركود
 }
 
 function stopLiveScan(){
   if(live.raf) cancelAnimationFrame(live.raf);
   live.raf=null;
   if(live.stream){ live.stream.getTracks().forEach(t=>t.stop()); live.stream=null; }
+  live.snapMode=false;
+  const sb=document.getElementById('btnSnapCapture'); if(sb) sb.style.display='none';
   document.getElementById('liveWrap').style.display='none';
   document.getElementById('gradeArea').style.display='none';
 }
@@ -2485,6 +2598,14 @@ function liveLoop(ts){
     let src=cv.imread(frameCanvas);
     const corners=detectFiducials(src);
     drawLiveOverlay(vw, vh, corners);
+
+    if(live.snapMode){            // وضع النقرة: ارسم الأركان فقط دون تصحيح تلقائي
+      if(corners) setLiveStatus('ok','✅ الأركان ظاهرة. اضغط «التقاط وتصحيح هذه الورقة».');
+      else setLiveStatus('info','قرّب الورقة حتى تظهر المربعات الأربعة.');
+      src.delete();
+      live.busy=false;
+      return;
+    }
 
     if(corners){
       live.missCount=0;
