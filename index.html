@@ -1639,11 +1639,12 @@ function onPdfRosterChosen(ev){
         const Tesseract = await ensureTesseract();
         showImportProgress('جارٍ تجهيز محرّك القراءة الضوئية…');
         const worker = await Tesseract.createWorker(['ara','eng']);
+        try{ await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }); }catch(_){}
         let ocrText='';
         for(let p=1;p<=pdf.numPages;p++){
           showImportProgress(`قراءة ضوئية للصفحة ${toArabic(p)} من ${toArabic(pdf.numPages)}…`);
           const page = await pdf.getPage(p);
-          const vp = page.getViewport({ scale: 2.4 });
+          const vp = page.getViewport({ scale: 3.2 });
           const canvas = document.createElement('canvas');
           canvas.width = vp.width; canvas.height = vp.height;
           await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
@@ -1652,23 +1653,28 @@ function onPdfRosterChosen(ev){
         }
         await worker.terminate();
         const ocrParsed = parseNoorRoster(ocrText);
-        // خريطة الأسماء من OCR حسب الهوية
+        // خريطة الأسماء من OCR حسب الهوية (إن طابقت) + قائمة الأسماء بالترتيب
         const nameBySeat = {};
         ocrParsed.students.forEach(s=>{ if(s.name) nameBySeat[s.seat]=s.name; });
+        const orderedNames = ocrParsed.orderedNames || [];
         let students;
         if(pdfParsed.students.length){
-          // الهويات من pdf.js (دقيقة) + الاسم من OCR بالمطابقة على الهوية، أو بالترتيب
+          // الهويات من pdf.js (دقيقة) + الاسم: مطابقة بالهوية، وإلا بالترتيب
           students = pdfParsed.students.map((s,i)=>({
             seat: s.seat,
-            name: nameBySeat[s.seat] || (ocrParsed.students[i] && ocrParsed.students[i].name) || ''
+            name: nameBySeat[s.seat] || orderedNames[i] || (ocrParsed.students[i] && ocrParsed.students[i].name) || ''
           }));
         } else {
-          students = ocrParsed.students;             // لا هويات من pdf.js → اعتمد OCR كاملاً
+          students = ocrParsed.students;
         }
+        const gotNames = students.filter(s=>s.name).length;
+        // تشخيص: إن بقيت الأسماء فارغة، احتفظ بعيّنة من نص OCR للعرض
+        window.__lastOcrSample = ocrText.slice(0, 400);
         parsed = {
           className: ocrParsed.className || pdfParsed.className,
           section: ocrParsed.section || pdfParsed.section,
-          students
+          students,
+          ocrNote: gotNames===0 ? 'تعذّرت قراءة الأسماء ضوئياً (الهويات دقيقة).' : ''
         };
       }
       hideImportProgress();
@@ -1679,7 +1685,7 @@ function onPdfRosterChosen(ev){
       let className = parsed.className || '';
       if(parsed.section) className = (className? className+' - ' : '') + parsed.section;
       if(!className) className = 'صف مستورد';
-      pendingImport = { groups:[{ className, students: parsed.students, code:'' }] };
+      pendingImport = { groups:[{ className, students: parsed.students, code:'', ocrNote: parsed.ocrNote||'' }] };
       openImportReview();
     }catch(err){ hideImportProgress(); alert('تعذّرت قراءة ملف PDF: '+err.message); }
   }).catch(()=>{ hideImportProgress(); alert('تعذّر تحميل قارئ PDF. تأكّد من الإنترنت وأعد المحاولة.'); });
@@ -1734,30 +1740,26 @@ function parseNoorRoster(text){
     if(HEADER.test(name)) return '';
     return name;
   };
-  const paired=[], idOnly=[], nameOnly=[];
+  const paired=[], idOnly=[], orderedNames=[];
   for(let ln of rawLines){
     const norm = normalizeDigits(ln);
     const seat = extractSeat(norm);
     const name = extractName(norm);
+    // اسم صالح (كلمتان فأكثر) — يُجمع بالترتيب أياً كان موقعه
+    if(name && (name.split(/\s+/).length >= 2)) orderedNames.push(name);
     if(seat && name) paired.push({ seat, name });
     else if(seat) idOnly.push(seat);
-    else if(name) nameOnly.push(name);
   }
-  // إن كانت معظم الصفوف مقترنة (نفس السطر) → اعتمدها
   let students = paired.slice();
-  // حالة الأعمدة المنفصلة: اربط الهويات اليتيمة بالأسماء اليتيمة بالترتيب
-  if(idOnly.length && (paired.length < idOnly.length)){
-    const n = Math.max(idOnly.length, 0);
-    for(let i=0;i<n;i++){
-      students.push({ seat: idOnly[i], name: nameOnly[i] || '' });
-    }
-  } else if(!paired.length && idOnly.length){
-    idOnly.forEach((s,i)=> students.push({ seat:s, name: nameOnly[i]||'' }));
+  if(!paired.length && idOnly.length){
+    idOnly.forEach((s,i)=> students.push({ seat:s, name: orderedNames[i]||'' }));
+  } else if(idOnly.length > paired.length){
+    idOnly.forEach((s,i)=> students.push({ seat:s, name:'' }));
   }
   // إزالة التكرار بالهوية
   const seen={}, out=[];
   students.forEach(st=>{ if(st.seat && !seen[st.seat]){ seen[st.seat]=1; out.push(st); } });
-  return { className, section, students: out };
+  return { className, section, students: out, orderedNames };
 }
 function cleanCell(s){ return String(s||'').replace(/[|:：ـ]/g,' ').replace(/\s+/g,' ').trim(); }
 function normalizeDigits(s){ return String(s||'').replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).replace(/[۰-۹]/g,d=>'0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]); }
@@ -1769,6 +1771,11 @@ function openImportReview(){
   if(!pendingImport) return;
   const body = document.getElementById('importReviewBody');
   let html = '';
+  const note = pendingImport.groups.some(g=>g.ocrNote);
+  if(note){
+    html += `<div style="background:#fff4e5;border:1px solid #f0c08a;border-radius:10px;padding:10px;margin-bottom:12px;font-size:13px;color:#8a5a00">
+      ℹ️ الهويات قُرئت بدقّة، لكن تعذّرت قراءة بعض الأسماء ضوئياً. يمكنك الاستيراد الآن بالهويات (يعمل التصحيح بالباركود فوراً) وتعديل الأسماء وقت ما تشاء.</div>`;
+  }
   pendingImport.groups.forEach((g,gi)=>{
     html += `<div class="subcard" style="margin-bottom:12px">
       <div style="font-weight:800;color:var(--teal-d)">${escapeHtml(g.className)}</div>
