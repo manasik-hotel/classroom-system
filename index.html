@@ -1637,21 +1637,27 @@ function onPdfRosterChosen(ev){
         // النص مكسور: الهويات من pdf.js دقيقة، والأسماء من OCR
         const pdfParsed = parseNoorRoster(fullText);  // هويات صحيحة + أسماء فارغة
         const Tesseract = await ensureTesseract();
-        showImportProgress('جارٍ تجهيز محرّك القراءة الضوئية…');
-        const worker = await Tesseract.createWorker(['ara','eng']);
-        try{ await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }); }catch(_){}
+        showImportProgress('جارٍ تجهيز محرّك القراءة الضوئية… (قد يستغرق تحميل العربية وقتاً أول مرة)');
+        let worker, ocrErr='';
+        try{
+          worker = await Tesseract.createWorker('ara+eng', 1);
+          try{ await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }); }catch(_){}
+        }catch(e){ ocrErr = 'تعذّر تحميل اللغة العربية للقراءة الضوئية: '+e.message; }
         let ocrText='';
-        for(let p=1;p<=pdf.numPages;p++){
-          showImportProgress(`قراءة ضوئية للصفحة ${toArabic(p)} من ${toArabic(pdf.numPages)}…`);
-          const page = await pdf.getPage(p);
-          const vp = page.getViewport({ scale: 3.2 });
-          const canvas = document.createElement('canvas');
-          canvas.width = vp.width; canvas.height = vp.height;
-          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-          const { data } = await worker.recognize(canvas);
-          ocrText += data.text + '\n';
+        if(worker){
+          for(let p=1;p<=pdf.numPages;p++){
+            showImportProgress(`قراءة ضوئية للصفحة ${toArabic(p)} من ${toArabic(pdf.numPages)}…`);
+            const page = await pdf.getPage(p);
+            const vp = page.getViewport({ scale: 3.2 });
+            const canvas = document.createElement('canvas');
+            canvas.width = vp.width; canvas.height = vp.height;
+            await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+            try{ const { data } = await worker.recognize(canvas); ocrText += data.text + '\n'; }
+            catch(e){ ocrErr = 'فشلت القراءة الضوئية: '+e.message; }
+          }
+          try{ await worker.terminate(); }catch(_){}
         }
-        await worker.terminate();
+        window.__ocrErr = ocrErr;
         const ocrParsed = parseNoorRoster(ocrText);
         // خريطة الأسماء من OCR حسب الهوية (إن طابقت) + قائمة الأسماء بالترتيب
         const nameBySeat = {};
@@ -1668,8 +1674,8 @@ function onPdfRosterChosen(ev){
           students = ocrParsed.students;
         }
         const gotNames = students.filter(s=>s.name).length;
-        // تشخيص: إن بقيت الأسماء فارغة، احتفظ بعيّنة من نص OCR للعرض
-        window.__lastOcrSample = ocrText.slice(0, 400);
+        // تشخيص: احتفظ بكامل نص OCR للعرض عند الحاجة
+        window.__lastOcrText = ocrText;
         parsed = {
           className: ocrParsed.className || pdfParsed.className,
           section: ocrParsed.section || pdfParsed.section,
@@ -1774,7 +1780,9 @@ function openImportReview(){
   const note = pendingImport.groups.some(g=>g.ocrNote);
   if(note){
     html += `<div style="background:#fff4e5;border:1px solid #f0c08a;border-radius:10px;padding:10px;margin-bottom:12px;font-size:13px;color:#8a5a00">
-      ℹ️ الهويات قُرئت بدقّة، لكن تعذّرت قراءة بعض الأسماء ضوئياً. يمكنك الاستيراد الآن بالهويات (يعمل التصحيح بالباركود فوراً) وتعديل الأسماء وقت ما تشاء.</div>`;
+      ℹ️ الهويات قُرئت بدقّة، لكن تعذّرت قراءة بعض الأسماء ضوئياً. يمكنك الاستيراد الآن بالهويات (يعمل التصحيح بالباركود فوراً) وتعديل الأسماء وقت ما تشاء.
+      <button class="ghost" style="margin-top:8px;width:100%;font-size:12px" onclick="showOcrDiag()">🔍 عرض ما قرأته القراءة الضوئية (لتشخيص المشكلة)</button>
+    </div>`;
   }
   pendingImport.groups.forEach((g,gi)=>{
     html += `<div class="subcard" style="margin-bottom:12px">
@@ -1800,6 +1808,13 @@ function openImportReview(){
 }
 function setImportCode(gi, val){ pendingImport.groups[gi].code = normalizeDigits(val).trim(); }
 function setImportName(gi, si, val){ pendingImport.groups[gi].students[si].name = val; }
+function showOcrDiag(){
+  const err = window.__ocrErr || '';
+  const txt = window.__lastOcrText || '';
+  const sample = txt.slice(0, 800) || '(لا يوجد نص — لم تُرجع القراءة الضوئية شيئاً)';
+  const arabic = (txt.match(/[\u0600-\u06FF]/g)||[]).length;
+  alert(`تشخيص القراءة الضوئية:\n${err? '⚠️ '+err+'\n':''}عدد الحروف العربية المقروءة: ${arabic}\n\nعيّنة مما قُرئ:\n${sample}`);
+}
 function closeImportReview(){ document.getElementById('importReviewOverlay').style.display='none'; pendingImport=null; }
 
 // تأكيد الاستيراد: إنشاء الفصول وإضافة الطلاب
