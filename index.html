@@ -57,6 +57,15 @@
   .subcard:last-child{margin-bottom:0}
   .subtitle{font-weight:800;color:var(--teal-d);margin-bottom:10px}
   .subtitle .sub{font-weight:500;color:var(--muted);font-size:12px}
+  .stcard{border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;background:#fff;transition:background .15s;max-width:100%;overflow:hidden}
+  .stcard .top{display:flex;align-items:center;gap:10px}
+  .stcard .nm{color:#1f5fb0;font-weight:800;font-size:16px;cursor:pointer;line-height:1.4;word-break:break-word}
+  .stcard .sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .stcard .sub .idlink{color:var(--teal-d);font-weight:700;cursor:pointer;border-bottom:1px dotted var(--teal-d)}
+  .stcard .stat{font-size:12px;font-weight:700;padding:1px 8px;border-radius:20px}
+  .attbtns{display:flex;gap:6px;margin-top:10px}
+  .attbtns button{flex:1;padding:11px 6px;font-size:14px;font-weight:800;border-radius:10px;border:2px solid;cursor:pointer;background:#fff}
+  .stchk{width:20px;height:20px;flex:0 0 auto}
   label.field{display:block;margin-bottom:12px;font-size:13px;font-weight:600;color:var(--muted)}
   label.field input,label.field select{
     width:100%;margin-top:6px;padding:11px 12px;border:1px solid var(--line);border-radius:10px;
@@ -494,13 +503,6 @@
       <button class="ghost" style="padding:6px 12px" onclick="closeStudentRecord()">✕ إغلاق</button>
     </div>
     <div id="stRecordBody"></div>
-  </div>
-</div>
-
-<!-- نافذة الحضور (وسط الشاشة) -->
-<div id="attOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,30,28,.55);z-index:10000;overflow-y:auto;padding:16px" onclick="if(event.target===this)closeAttMenu()">
-  <div style="max-width:360px;margin:18vh auto 0;background:#fff;border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
-    <div id="attBody"></div>
   </div>
 </div>
 
@@ -1805,6 +1807,9 @@ function bulkNote(kind){
   // ميزة الإرسال تُبرمج لاحقاً — حالياً تأكيد فقط
   alert(`سيتم إرسال ملاحظة بخصوص ${toArabic(sel.length)} طالب إلى «${target}».\n(هذه الميزة قيد التطوير وستُفعّل لاحقاً.)`);
 }
+// خرائط حالات الحضور (عامة ليستخدمها العرض والنافذة معاً)
+const ATT_BG = { excused:'#e7f7ee', late:'#fff4e0', absent:'#fdecec' };   // مستأذن أخضر · متأخر أصفر · غائب أحمر (حاضر = أبيض)
+const ATT_LBL = { present:'حاضر', excused:'مستأذن', late:'متأخر', absent:'غائب' };
 function renderStudents(){
   const host = document.getElementById('studentsHost'); if(!host) return;
   const filter = document.getElementById('stViewClass') ? document.getElementById('stViewClass').value : '';
@@ -1812,28 +1817,43 @@ function renderStudents(){
   const cnt = document.getElementById('stCount'); if(cnt) cnt.textContent = `${toArabic(list.length)} طالب`;
   if(!state.classes.length){ host.innerHTML='<div class="empty">أضف فصلاً أولاً، ثم سجّل الطلاب.</div>'; updateBulkBar(); return; }
   if(!list.length){ host.innerHTML='<div class="empty">لا يوجد طلاب في هذا العرض.</div>'; updateBulkBar(); return; }
-  const attBg = { excused:'#e7f7ee', late:'#fff4e0', absent:'#fdecec' };   // مستأذن أخضر · متأخر أصفر · غائب أحمر (حاضر = أبيض)
-  const attLbl = { present:'حاضر', excused:'مستأذن', late:'متأخر', absent:'غائب' };
-  let html='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="min-width:520px"><thead><tr><th></th><th>#</th><th>رقم الهوية</th><th>اسم الطالب</th><th>الصف</th><th></th></tr></thead><tbody>';
+  const attBg = ATT_BG, attLbl = ATT_LBL;
+  const statCol = { excused:'#1a7a4f', late:'#b97400', absent:'#c0392b' };
+  let html = '';
   list.forEach((s,i)=>{
     const chk = state.selectedStudents[s.seat] ? 'checked':'';
-    const att = effectiveAtt(s);                        // الحالة الفعلية لليوم (لحظية أو محفوظة)
-    const rowBg = (att && attBg[att.status]) ? `background:${attBg[att.status]}` : '';
-    // رقم الهوية: يفتح سجل الطالب
-    const idCell = `<span style="font-weight:700;cursor:pointer;color:var(--teal-d);border-bottom:1px dotted var(--teal-d)" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span>`;
-    // الاسم: يبقى ظاهراً دائماً (أزرق)، والنقر عليه يفتح نافذة الحضور في وسط الشاشة
-    const badge = att ? `<span style="font-size:11px;color:var(--muted);font-weight:500"> — ${attLbl[att.status]}${att.note?' • '+escapeHtml(att.note):''}</span>` : '';
-    let nameCell = `<span style="cursor:pointer;color:#1f5fb0;font-weight:700;font-size:15px;line-height:1.6;text-decoration:underline" onclick="openAttMenu('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span>${badge}`;
-    html += `<tr style="${rowBg}">
-      <td><input type="checkbox" ${chk} style="width:18px;height:18px" onchange="toggleSelStudent('${escapeHtml(s.seat)}',this.checked)"></td>
-      <td>${i+1}</td>
-      <td>${idCell}</td>
-      <td style="text-align:right">${nameCell}</td>
-      <td>${escapeHtml(classNameByCode(s.classCode)||s.classCode||'—')}</td>
-      <td><button class="ghost" style="padding:6px 8px;color:var(--bad)" onclick="delStudent('${escapeHtml(s.seat)}')">حذف</button></td>
-    </tr>`;
+    const att = effectiveAtt(s);
+    const cardBg = (att && attBg[att.status]) ? `background:${attBg[att.status]}` : '';
+    const menuOpen = state.attMenuSeat===s.seat;
+    const statChip = att ? ` · <span class="stat" style="background:#fff;color:${statCol[att.status]||'#555'};border:1px solid ${statCol[att.status]||'#555'}">${attLbl[att.status]}</span>` : '';
+    const noteLine = (att && att.note) ? `<div class="sub" style="color:#555">📝 ${escapeHtml(att.note)}</div>` : '';
+    let menu = '';
+    if(menuOpen){
+      menu = `<div class="attbtns">
+          <button style="background:#e7f7ee;color:#1a7a4f;border-color:#1a7a4f" onclick="setAttendance('${escapeHtml(s.seat)}','excused')">مستأذن</button>
+          <button style="background:#fff4e0;color:#b97400;border-color:#b97400" onclick="setAttendance('${escapeHtml(s.seat)}','late')">متأخر</button>
+          <button style="background:#fdecec;color:#c0392b;border-color:#c0392b" onclick="setAttendance('${escapeHtml(s.seat)}','absent')">غائب</button>
+        </div>
+        <input id="attNote" placeholder="ملاحظة (اختياري)" value="${escapeHtml(att&&att.note||'')}" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:9px;font:inherit;text-align:right;margin-top:8px">
+        <div style="display:flex;gap:6px;margin-top:8px">
+          <button class="ghost" style="flex:1;padding:8px;color:var(--ok);border-color:var(--ok)" onclick="setAttendance('${escapeHtml(s.seat)}','present')">↩️ حاضر (إزالة الحالة)</button>
+          <button class="ghost" style="flex:1;padding:8px" onclick="closeAttMenu()">إغلاق</button>
+        </div>`;
+    }
+    html += `<div class="stcard" style="${cardBg}">
+      <div class="top">
+        <input type="checkbox" class="stchk" ${chk} onchange="toggleSelStudent('${escapeHtml(s.seat)}',this.checked)">
+        <div style="flex:1;min-width:0;text-align:right">
+          <span class="nm" onclick="openAttMenu('${escapeHtml(s.seat)}')">${toArabic(i+1)}. ${escapeHtml(s.name)}</span>
+          <div class="sub" style="overflow-wrap:anywhere;margin-top:3px"><span class="idlink" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span> · ${escapeHtml(classNameByCode(s.classCode)||s.classCode||'—')}${statChip}</div>
+          ${noteLine}
+        </div>
+        <button onclick="delStudent('${escapeHtml(s.seat)}')" style="flex:0 0 auto;width:auto;padding:6px 10px;border:1px solid var(--bad);background:#fff;color:var(--bad);border-radius:9px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap">حذف</button>
+      </div>
+      ${menu}
+    </div>`;
   });
-  host.innerHTML=html+'</tbody></table></div>';
+  host.innerHTML = html;
   updateBulkBar();
 }
 // الحالة الفعلية للطالب اليوم: اللحظية إن وُجدت، وإلا المحفوظة بتاريخ اليوم (تبقى حتى يوم جديد)
@@ -1847,26 +1867,14 @@ function effectiveAtt(s){
   }
   return null;
 }
-// نافذة الحضور في وسط الشاشة (تظهر الحالات الثلاث كاملة دون تمرير)
+// فتح/إغلاق قائمة الحضور داخل بطاقة الطالب (دون فقد الموضع)
 function openAttMenu(seat){
-  const s = findStudent(seat); if(!s) return;
-  const att = effectiveAtt(s);
-  const body = document.getElementById('attBody');
-  const btn = (status,label,bg,col)=>`<button class="ghost" style="padding:14px 8px;font-size:15px;font-weight:800;background:${bg};color:${col};border:2px solid ${col};border-radius:12px;flex:1" onclick="setAttendance('${escapeHtml(seat)}','${status}')">${label}</button>`;
-  body.innerHTML = `
-    <div style="text-align:center;font-weight:800;font-size:17px;margin-bottom:2px">${escapeHtml(s.name)}</div>
-    <div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:14px">رقم الهوية: ${escapeHtml(seat)}${att?` · الحالة الحالية: ${attLbl[att.status]}`:''}</div>
-    <div style="display:flex;gap:8px;margin-bottom:12px">
-      ${btn('excused','مستأذن','#e7f7ee','#1a7a4f')}
-      ${btn('late','متأخر','#fff4e0','#b97400')}
-      ${btn('absent','غائب','#fdecec','#c0392b')}
-    </div>
-    <input id="attNote" placeholder="ملاحظة (اختياري)" value="${escapeHtml(att&&att.note||'')}" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit;text-align:right;margin-bottom:10px">
-    <button class="ghost" style="width:100%;padding:10px;color:var(--ok);border-color:var(--ok);margin-bottom:6px" onclick="setAttendance('${escapeHtml(seat)}','present')">↩️ تعيين «حاضر» (إزالة الحالة)</button>
-    <button class="ghost" style="width:100%;padding:10px" onclick="closeAttMenu()">إغلاق</button>`;
-  document.getElementById('attOverlay').style.display='block';
+  state.attMenuSeat = (state.attMenuSeat===seat ? null : seat);
+  const y = window.scrollY;
+  renderStudents();
+  window.scrollTo(0, y);   // حافظ على موضع التمرير
 }
-function closeAttMenu(){ const o=document.getElementById('attOverlay'); if(o) o.style.display='none'; }
+function closeAttMenu(){ state.attMenuSeat = null; const y=window.scrollY; renderStudents(); window.scrollTo(0,y); }
 function setAttendance(seat,status){
   const noteEl = document.getElementById('attNote');
   const note = noteEl ? (noteEl.value||'').trim() : '';
@@ -1880,8 +1888,10 @@ function setAttendance(seat,status){
   } else {
     state.attendance[seat] = { status, note, ts: Date.now() };
   }
-  closeAttMenu();
+  state.attMenuSeat = null;
+  const y = window.scrollY;
   renderStudents();
+  window.scrollTo(0, y);   // ابقَ في مكانك في تسلسل التحضير
 }
 
 /* ============================================================
