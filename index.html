@@ -276,23 +276,15 @@
       </div>
       <div id="secImport" class="seccontent" style="display:none">
         <div class="subcard">
-          <div class="subtitle">📸 استيراد من صورة (لقطة شاشة نور) <span class="sub">الأوضح للأسماء</span></div>
-          <p class="hint" style="margin-top:4px">التقط لقطة شاشة لقائمة الطلاب في نور (أو صوّرها)، وارفعها هنا. نصّ الشاشة أوضح من الـPDF فتُقرأ الأسماء أفضل. يكتشف النظام الهوية والاسم تلقائياً.</p>
-          <input id="imgRosterFile" type="file" accept="image/*" multiple style="display:none" onchange="onImageRosterChosen(event)">
-          <button class="primary" style="background:#0b7a63" onclick="document.getElementById('imgRosterFile').click()">📸 اختيار صورة/لقطة شاشة</button>
-        </div>
-        <div class="subcard">
-          <div class="subtitle">📄 استيراد من ملف PDF (نور) <span class="sub">الهويات دقيقة دائماً</span></div>
-          <p class="hint" style="margin-top:4px">ارفع ملف PDF من نور. الهويات تُستخرج بدقّة تامّة؛ والأسماء قد تحتاج قراءة ضوئية (أوضح في لقطة الشاشة أعلاه).</p>
-          <input id="pdfFile" type="file" accept="application/pdf,.pdf" style="display:none" onchange="onPdfRosterChosen(event)">
-          <button class="primary" style="background:#1f7a55" onclick="document.getElementById('pdfFile').click()">📄 اختيار ملف PDF من نور</button>
-        </div>
-        <div class="subcard">
-          <div class="subtitle">📊 استيراد من ملف Excel/CSV <span class="sub">دفعة طلاب</span></div>
-          <p class="hint" style="margin-top:4px">يكتشف النظام عمودَي <b>رقم الهوية</b> و<b>الاسم</b> تلقائياً. إن وُجد عمود للصف يُستخدم؛ وإلا يُطلب منك اسم الصف قبل الرفع.</p>
+          <div class="subtitle">📊 استيراد من ملف Excel (نور) <span class="sub">الأسماء والهويات بدقّة</span></div>
+          <div class="hint" style="background:#eef6f4;border:1px solid var(--teal-l);border-radius:10px;padding:10px;margin-top:4px;line-height:1.9">
+            <b>طريقة تصدير الأسماء من نور:</b><br>
+            افتح <b>نور</b> ← <b>تقارير</b> ← <b>تقارير أخرى</b> ← <b>كشف بأسماء الطلاب</b> ← <b>تصدير الأسماء بالصف</b> (اختر صيغة Excel).<br>
+            ثم ارفع الملف هنا — يكتشف النظام <b>الصف والفصل والأسماء والهويات</b> تلقائياً.
+          </div>
           <input id="xlsxFile" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onXlsxChosen(event)">
-          <button class="primary" style="background:#1f7a55" onclick="document.getElementById('xlsxFile').click()">📂 اختيار ملف Excel/CSV</button>
-          <div style="margin:12px 0 6px;font-size:12px;color:var(--muted)">أو الصق الصفوف يدوياً (رقم الهوية ثم الاسم، سطر لكل طالب):</div>
+          <button class="primary" style="margin-top:10px;background:#0b7a63" onclick="document.getElementById('xlsxFile').click()">📂 اختيار ملف Excel من نور</button>
+          <div style="margin:14px 0 6px;font-size:12px;color:var(--muted)">أو الصق الصفوف يدوياً (رقم الهوية ثم الاسم، سطر لكل طالب):</div>
           <textarea id="stBulk" rows="4" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;font-weight:600;color:var(--ink);background:#fcfdfd" placeholder="1061532883&#9;محمد نجيب حكمي&#10;1061532884&#9;أحمد علي"></textarea>
           <label class="field" style="margin-top:10px">الصف الذي ستُضاف إليه الدفعة الملصقة
             <select id="stImportClass"><option value="">— اختر الصف —</option></select>
@@ -1525,60 +1517,113 @@ function onXlsxChosen(ev){
     try{
       const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
       const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {header:1, blankrows:false});
+      const rows = XLSX.utils.sheet_to_json(ws, {header:1, blankrows:false, defval:''});
       const parsed = parseExcelRoster(rows);
-      if(!parsed.students.length){ alert('لم يُعثر على بيانات طلاب صالحة في الملف.'); return; }
-      // تجميع حسب الصف إن اكتُشف عمود صف، وإلا مجموعة واحدة بلا اسم صف
-      if(parsed.byClass){
-        const groups = Object.keys(parsed.byClass).map(cn=>({ className: cn||'صف مستورد', students: parsed.byClass[cn], code:'' }));
+      if(!parsed.students.length){ alert('لم يُعثر على بيانات طلاب صالحة في الملف. تأكّد أنه «كشف بأسماء الطلاب» المُصدَّر من نور.'); return; }
+      // العنوان: الصف ثم الفصل (مثال: «الأول الثانوي 6»)
+      let className = parsed.grade || '';
+      if(parsed.section) className = (className ? className + ' ' : '') + parsed.section;
+      if(!className && parsed.byClass){
+        const groups = Object.keys(parsed.byClass).map(cn=>({ className: cn||'صف', students: parsed.byClass[cn], code:'' }));
         pendingImport = { groups };
       } else {
-        pendingImport = { groups:[{ className:'صف مستورد (بلا اسم في الملف)', students: parsed.students, code:'' }] };
+        if(!className) className = 'صف';
+        pendingImport = { groups:[{ className, students: parsed.students, code:'' }] };
       }
       openImportReview();
     }catch(err){ alert('تعذّرت قراءة الملف: '+err.message); }
   };
   reader.readAsArrayBuffer(file);
 }
-// تحليل صفوف Excel: اكتشاف أعمدة الهوية/الاسم/الصف بمرونة
+// تحليل ملف Excel المُصدَّر من نور: الصف/الفصل من الترويسة + الأسماء والهويات من الجدول
 function parseExcelRoster(rows){
   if(!rows || !rows.length) return { students:[] };
-  // كشف صف الرؤوس
-  let headerIdx = -1, idCol=-1, nameCol=-1, classCol=-1;
-  for(let r=0;r<Math.min(rows.length,5);r++){
-    const row = rows[r]||[];
-    row.forEach((cell,ci)=>{
-      const t = String(cell||'').trim();
-      if(/هوية|سجل|مدني|رقم/.test(t) && idCol<0) { idCol=ci; headerIdx=r; }
-      if(/اسم|الطالب/.test(t) && nameCol<0) { nameCol=ci; headerIdx=r; }
-      if(/صف|فصل/.test(t) && classCol<0) { classCol=ci; }
-    });
-    if(idCol>=0 && nameCol>=0) break;
-  }
-  const students=[]; const byClass = classCol>=0 ? {} : null; const seen={};
-  const start = headerIdx>=0 ? headerIdx+1 : 0;
-  for(let r=start;r<rows.length;r++){
-    const row = rows[r]||[];
-    if(!row.length) continue;
-    let seat='', name='', cls='';
-    if(idCol>=0 || nameCol>=0){
-      seat = normalizeSeat(row[idCol>=0?idCol:0]);
-      name = String(row[nameCol>=0?nameCol:1]!=null?row[nameCol>=0?nameCol:1]:'').trim();
-      if(classCol>=0) cls = String(row[classCol]!=null?row[classCol]:'').trim();
-    } else {
-      // بلا رؤوس: حاول إيجاد رقم طويل = هوية، والنص الأطول = اسم
-      const idc = row.findIndex(c=>normalizeSeat(c).length>=9);
-      seat = idc>=0 ? normalizeSeat(row[idc]) : '';
-      name = row.filter((c,i)=>i!==idc).map(c=>String(c||'').trim()).filter(x=>/[أ-ي]/.test(x)).sort((a,b)=>b.length-a.length)[0]||'';
+  const cell = (r,c)=> (rows[r] && rows[r][c]!=null) ? String(rows[r][c]).trim() : '';
+  // قيمة حقل ترويسة: في صف يحوي التسمية، خذ النص الأقرب للتسمية (وليس الأطول)
+  const headerValueOf = (labelRe)=>{
+    for(let r=0;r<Math.min(rows.length,20);r++){
+      const row = rows[r]||[];
+      let labelCol=-1;
+      row.forEach((c,ci)=>{ const t=String(c==null?'':c).trim(); if(t && labelRe.test(t) && labelCol<0) labelCol=ci; });
+      if(labelCol<0) continue;
+      let best='', bestDist=1e9;
+      row.forEach((c,ci)=>{
+        const t=String(c==null?'':c).trim();
+        if(!t || t===':' || t==='：') return;
+        if(labelRe.test(t)) return;
+        // تجاهل نصوص ترويسة أخرى (المملكة/وزارة/الإدارة) إن لم تكن القيمة المقصودة
+        if(/المملكة|وزارة|الإدارة|الادارة|العامة|بمنطقة/.test(t)) return;
+        const d=Math.abs(ci-labelCol);
+        if(d<bestDist){ bestDist=d; best=t; }
+      });
+      if(best) return best;
     }
-    name = cleanCell(name);
-    if(!name || name.length<3) continue;
-    if(seat && seen[seat]) continue; if(seat) seen[seat]=1;
-    const st = { seat, name };
-    students.push(st);
-    if(byClass){ (byClass[cls]=byClass[cls]||[]).push(st); }
+    return '';
+  };
+  // اكتشاف صف رؤوس الجدول (يحوي «الاسم» و«السجل المدني»)
+  let headerIdx=-1, nameCol=-1, idCol=-1, seqCol=-1;
+  for(let r=0;r<rows.length;r++){
+    const row = rows[r]||[];
+    let nC=-1,iC=-1,sC=-1;
+    row.forEach((c,ci)=>{
+      const t=String(c==null?'':c).trim();
+      if(/^الاسم$/.test(t)||/اسم الطالب/.test(t)) nC=ci;
+      if(/السجل المدني|رقم الهوية|الهوية|السجل/.test(t)) iC=ci;
+      if(/^م$/.test(t)) sC=ci;
+    });
+    if(nC>=0 && iC>=0){ headerIdx=r; nameCol=nC; idCol=iC; seqCol=sC; break; }
   }
-  return { students, byClass };
+  // الترويسة: الصف والفصل
+  let grade = headerValueOf(/^الصف$/);
+  let section = headerValueOf(/^الفصل$/);
+  // نظّف الفصل ليكون رقماً إن أمكن
+  const secDigits = normalizeDigits(section).replace(/[^0-9]/g,'');
+  if(secDigits) section = secDigits;
+
+  const students=[]; const seen={};
+  if(headerIdx>=0){
+    // تنسيق نور القياسي
+    for(let r=headerIdx+1;r<rows.length;r++){
+      const name = cleanCell(cell(r,nameCol));
+      let seat = normalizeSeat(cell(r,idCol));
+      if(!name || name.replace(/\s/g,'').length<3) continue;
+      if(/الاسم|السجل|المدني/.test(name)) continue;
+      if(seat && seen[seat]) continue; if(seat) seen[seat]=1;
+      students.push({ seat, name });
+    }
+    return { students, grade, section };
+  }
+  // احتياط: ملف عام (اكتشاف مرن للأعمدة)
+  let hIdx=-1, iC=-1, nC=-1, cC=-1;
+  for(let r=0;r<Math.min(rows.length,6);r++){
+    (rows[r]||[]).forEach((c,ci)=>{
+      const t=String(c||'').trim();
+      if(/هوية|سجل|مدني|رقم/.test(t)&&iC<0){iC=ci;hIdx=r;}
+      if(/اسم|الطالب/.test(t)&&nC<0){nC=ci;hIdx=r;}
+      if(/صف|فصل/.test(t)&&cC<0)cC=ci;
+    });
+    if(iC>=0&&nC>=0)break;
+  }
+  const byClass = cC>=0?{}:null;
+  const start = hIdx>=0?hIdx+1:0;
+  for(let r=start;r<rows.length;r++){
+    const row=rows[r]||[]; if(!row.length)continue;
+    let seat='',name='',cls='';
+    if(iC>=0||nC>=0){
+      seat=normalizeSeat(row[iC>=0?iC:0]);
+      name=cleanCell(String(row[nC>=0?nC:1]!=null?row[nC>=0?nC:1]:''));
+      if(cC>=0)cls=String(row[cC]!=null?row[cC]:'').trim();
+    }else{
+      const idc=row.findIndex(c=>normalizeSeat(c).length>=9);
+      seat=idc>=0?normalizeSeat(row[idc]):'';
+      name=cleanCell(row.filter((c,i)=>i!==idc).map(c=>String(c||'').trim()).filter(x=>/[أ-ي]/.test(x)).sort((a,b)=>b.length-a.length)[0]||'');
+    }
+    if(!name||name.length<3)continue;
+    if(seat&&seen[seat])continue; if(seat)seen[seat]=1;
+    const st={seat,name}; students.push(st);
+    if(byClass){(byClass[cls]=byClass[cls]||[]).push(st);}
+  }
+  return { students, byClass, grade, section };
 }
 function upsertStudent(st){
   const i = state.students.findIndex(s=>s.seat===st.seat);
@@ -1590,245 +1635,8 @@ function upsertStudent(st){
    ============================================================ */
 let pendingImport = null;   // { groups:[{className, students:[{seat,name}], code:''}] }
 
-// استيراد من صورة (لقطة شاشة نور) عبر القراءة الضوئية
-function loadImageEl(file){
-  return new Promise((res,rej)=>{
-    const url = URL.createObjectURL(file);
-    const img = new Image();
-    img.onload = ()=>{ res(img); };   // الرابط يبقى صالحاً ما دامت الصورة مستخدمة
-    img.onerror = ()=>{ URL.revokeObjectURL(url); rej(new Error('تعذّر تحميل الصورة')); };
-    img.src = url;
-  });
-}
-function onImageRosterChosen(ev){
-  const files = Array.from(ev.target.files||[]);
-  ev.target.value='';
-  if(!files.length) return;
-  showImportProgress('جارٍ تجهيز القراءة الضوئية…');
-  ensureTesseract().then(async (Tesseract)=>{
-    let worker, ocrErr='';
-    try{
-      worker = await Tesseract.createWorker('ara+eng', 1);
-      try{ await worker.setParameters({ preserve_interword_spaces:'1' }); }catch(_){}
-    }catch(e){ ocrErr='تعذّر تحميل اللغة العربية: '+e.message; }
-    let ocrText='';
-    if(worker){
-      for(let i=0;i<files.length;i++){
-        showImportProgress(`قراءة الصورة ${toArabic(i+1)} من ${toArabic(files.length)}…`);
-        try{
-          const img = await loadImageEl(files[i]);   // تحميل الصورة كاملةً أولاً
-          const { data } = await worker.recognize(img);
-          ocrText += (data && data.text ? data.text : '') + '\n';
-        }catch(e){ ocrErr='فشلت قراءة الصورة: '+((e&&e.message)||e||'سبب غير معروف'); }
-      }
-      try{ await worker.terminate(); }catch(_){}
-    }
-    hideImportProgress();
-    window.__lastOcrText = ocrText; window.__ocrErr = ocrErr;
-    const parsed = parseNoorRoster(ocrText);
-    // إن لم تُكتشف هويات لكن وُجدت أسماء → استورد بالأسماء مع ترقيم تلقائي
-    let students = parsed.students.slice();
-    const names = parsed.orderedNames||[];
-    if(!students.length && names.length){
-      students = names.map((nm,i)=>({ seat:'', name:nm }));
-    }
-    if(!students.length){
-      alert('لم أتمكّن من قراءة بيانات من الصورة.\n'+(ocrErr||'جرّب لقطة أوضح وأكبر، أو قرّبها على قائمة الأسماء فقط.'));
-      return;
-    }
-    let className = parsed.className || '';
-    if(parsed.section) className = (className? className+' - ':'') + parsed.section;
-    if(!className) className = 'صف مستورد';
-    const gotNames = students.filter(s=>s.name).length;
-    pendingImport = { groups:[{ className, students, code:'', fromImage:true,
-      ocrNote: gotNames < students.length ? 'بعض الأسماء قد تحتاج تصحيحاً (حدّ القراءة الضوئية).' : '' }] };
-    openImportReview();
-  }).catch(()=>{ hideImportProgress(); alert('تعذّر تحميل محرّك القراءة الضوئية. تأكّد من الإنترنت.'); });
-}
+// (أُزيل استيراد PDF/الصورة بناءً على الطلب — يُعتمد Excel فقط)
 
-// اختيار ملف PDF من نور
-// تحميل Tesseract.js عند الحاجة فقط (للملفات التي يتعذّر استخراج نصّها)
-function ensureTesseract(){
-  if(window.Tesseract) return Promise.resolve(window.Tesseract);
-  return new Promise((res,rej)=>{
-    const s=document.createElement('script');
-    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
-    s.onload=()=>res(window.Tesseract);
-    s.onerror=()=>rej(new Error('تعذّر تحميل محرّك القراءة الضوئية'));
-    document.head.appendChild(s);
-  });
-}
-// شريط حالة الاستيراد
-function showImportProgress(msg){
-  let el=document.getElementById('importProgress');
-  if(!el){
-    el=document.createElement('div'); el.id='importProgress';
-    el.style.cssText='position:fixed;inset:0;background:rgba(15,30,28,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
-    el.innerHTML='<div style="background:#fff;border-radius:16px;padding:24px;max-width:340px;text-align:center"><div class="spin" style="width:42px;height:42px;border:4px solid #e0eeeb;border-top-color:#0b7a63;border-radius:50%;margin:0 auto 14px;animation:spin 1s linear infinite"></div><div id="importProgressMsg" style="font-weight:700;color:var(--teal-d)"></div></div>';
-    document.body.appendChild(el);
-    if(!document.getElementById('spinKeyframes')){ const st=document.createElement('style'); st.id='spinKeyframes'; st.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
-  }
-  el.style.display='flex';
-  document.getElementById('importProgressMsg').textContent=msg;
-}
-function hideImportProgress(){ const el=document.getElementById('importProgress'); if(el) el.style.display='none'; }
-
-// استيراد PDF من نور: مسار نصّي سريع، وإلا قراءة ضوئية (OCR)
-function onPdfRosterChosen(ev){
-  const file = ev.target.files && ev.target.files[0];
-  ev.target.value='';
-  if(!file) return;
-  showImportProgress('جارٍ قراءة الملف…');
-  ensurePdfJs().then(async (pdfjsLib)=>{
-    try{
-      const buf = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      // 1) محاولة الاستخراج النصّي
-      let fullText = '';
-      for(let p=1;p<=pdf.numPages;p++){
-        const page = await pdf.getPage(p);
-        const tc = await page.getTextContent();
-        groupTextByLines(tc.items).forEach(line=>{ fullText += line + '\n'; });
-      }
-      // هل النص عربي سليم؟ (يحوي حروفاً في نطاق العربية)
-      const arabicCount = (fullText.match(/[\u0600-\u06FF]/g)||[]).length;
-      let parsed;
-      if(arabicCount > 20){
-        parsed = parseNoorRoster(fullText);          // مسار سريع: النص سليم
-      } else {
-        // النص مكسور: الهويات من pdf.js دقيقة، والأسماء من OCR
-        const pdfParsed = parseNoorRoster(fullText);  // هويات صحيحة + أسماء فارغة
-        const Tesseract = await ensureTesseract();
-        showImportProgress('جارٍ تجهيز محرّك القراءة الضوئية… (قد يستغرق تحميل العربية وقتاً أول مرة)');
-        let worker, ocrErr='';
-        try{
-          worker = await Tesseract.createWorker('ara+eng', 1);
-          try{ await worker.setParameters({ tessedit_pageseg_mode: '6', preserve_interword_spaces: '1' }); }catch(_){}
-        }catch(e){ ocrErr = 'تعذّر تحميل اللغة العربية للقراءة الضوئية: '+e.message; }
-        let ocrText='';
-        if(worker){
-          for(let p=1;p<=pdf.numPages;p++){
-            showImportProgress(`قراءة ضوئية للصفحة ${toArabic(p)} من ${toArabic(pdf.numPages)}…`);
-            const page = await pdf.getPage(p);
-            const vp = page.getViewport({ scale: 3.2 });
-            const canvas = document.createElement('canvas');
-            canvas.width = vp.width; canvas.height = vp.height;
-            await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
-            try{ const { data } = await worker.recognize(canvas); ocrText += data.text + '\n'; }
-            catch(e){ ocrErr = 'فشلت القراءة الضوئية: '+e.message; }
-          }
-          try{ await worker.terminate(); }catch(_){}
-        }
-        window.__ocrErr = ocrErr;
-        const ocrParsed = parseNoorRoster(ocrText);
-        // خريطة الأسماء من OCR حسب الهوية (إن طابقت) + قائمة الأسماء بالترتيب
-        const nameBySeat = {};
-        ocrParsed.students.forEach(s=>{ if(s.name) nameBySeat[s.seat]=s.name; });
-        const orderedNames = ocrParsed.orderedNames || [];
-        let students;
-        if(pdfParsed.students.length){
-          // الهويات من pdf.js (دقيقة) + الاسم: مطابقة بالهوية، وإلا بالترتيب
-          students = pdfParsed.students.map((s,i)=>({
-            seat: s.seat,
-            name: nameBySeat[s.seat] || orderedNames[i] || (ocrParsed.students[i] && ocrParsed.students[i].name) || ''
-          }));
-        } else {
-          students = ocrParsed.students;
-        }
-        const gotNames = students.filter(s=>s.name).length;
-        // تشخيص: احتفظ بكامل نص OCR للعرض عند الحاجة
-        window.__lastOcrText = ocrText;
-        parsed = {
-          className: ocrParsed.className || pdfParsed.className,
-          section: ocrParsed.section || pdfParsed.section,
-          students,
-          ocrNote: gotNames===0 ? 'تعذّرت قراءة الأسماء ضوئياً (الهويات دقيقة).' : ''
-        };
-      }
-      hideImportProgress();
-      if(!parsed.students.length){
-        alert('لم يُعثر على بيانات طلاب. تأكّد أنه «كشف بأسماء الطلاب» من نور.');
-        return;
-      }
-      let className = parsed.className || '';
-      if(parsed.section) className = (className? className+' - ' : '') + parsed.section;
-      if(!className) className = 'صف مستورد';
-      pendingImport = { groups:[{ className, students: parsed.students, code:'', ocrNote: parsed.ocrNote||'' }] };
-      openImportReview();
-    }catch(err){ hideImportProgress(); alert('تعذّرت قراءة ملف PDF: '+err.message); }
-  }).catch(()=>{ hideImportProgress(); alert('تعذّر تحميل قارئ PDF. تأكّد من الإنترنت وأعد المحاولة.'); });
-}
-
-// تجميع عناصر النص في أسطر حسب الإحداثي y (لقراءة الجدول صحيحاً)
-function groupTextByLines(items){
-  const rows = {};
-  items.forEach(it=>{
-    if(!it.str || !it.str.trim()) return;
-    const y = Math.round(it.transform[5]);
-    let key = Object.keys(rows).find(k=>Math.abs(+k - y) <= 4);
-    if(key==null){ key = String(y); rows[key]=[]; }
-    rows[key].push({ x: it.transform[4], s: it.str });
-  });
-  // ترتيب الأسطر من الأعلى للأسفل، وداخل السطر من اليمين لليسار (عربي)
-  return Object.keys(rows).sort((a,b)=> +b - +a).map(k=>{
-    return rows[k].sort((a,b)=> b.x - a.x).map(o=>o.s).join(' ').replace(/\s+/g,' ').trim();
-  });
-}
-
-// تحليل نص كشف نور: استخراج الصف/الفصل + صفوف (رقم، هوية، اسم) — متين لمخرجات OCR
-function parseNoorRoster(text){
-  const rawLines = text.split(/\n/).map(l=>l.trim()).filter(Boolean);
-  let className='', section='';
-  for(const ln of rawLines){
-    let m = ln.match(/الصف\s*[:：]?\s*([^\d\n:：]{3,})/);
-    if(m && !className){
-      let c = cleanCell(m[1]);
-      // أوقف عند كلمة مفتاحية لاحقة
-      c = c.replace(/(القسم|الفصل|النظام|المعلم|المدرسة).*/,'').trim();
-      if(c.length>=3) className = c;
-    }
-    m = ln.match(/الفصل\s*[:：]?\s*([1-9][0-9]{0,2})/);
-    if(m && !section){ const sec=normalizeDigits(m[1]); if(sec!=='0') section=sec; }
-  }
-  const HEADER = /المملكة|العربية|السعودية|وزارة|التعليم|الادارة|الإدارة|العامة|للتعليم|بمنطقة|مكة|المكرمة|كشف|بأسماء|الطلاب|بالفصل|المدرسة|الثانوية|الثانوي|المتوسطة|الابتدائية|مسارات|القسم|المشتركة|النظام|الدراسي|منتظم|المعلم|السجل|المدني|الاسم|تقرير|الفصل|الصف/;
-  const extractSeat = (norm)=>{
-    let groups = norm.match(/\d+/g) || [];
-    let seat = groups.find(g=>g.length===10) || groups.find(g=>g.length>=9&&g.length<=11);
-    if(!seat){
-      const merged = norm.replace(/(\d)[ \u00a0]+(?=\d)/g,'$1');
-      const mg = merged.match(/\d{9,11}/g) || [];
-      seat = mg.find(g=>g.length===10) || mg.sort((a,b)=>b.length-a.length)[0];
-    }
-    return (seat && seat.length>=9 && seat.length<=11) ? seat : '';
-  };
-  const extractName = (norm)=>{
-    const rest = norm.replace(/\d+/g,' ').replace(/[^\u0600-\u06FF\s]/g,' ');
-    const name = cleanCell(rest);
-    if(name.replace(/\s/g,'').length < 4) return '';
-    if(HEADER.test(name)) return '';
-    return name;
-  };
-  const paired=[], idOnly=[], orderedNames=[];
-  for(let ln of rawLines){
-    const norm = normalizeDigits(ln);
-    const seat = extractSeat(norm);
-    const name = extractName(norm);
-    // اسم صالح (كلمتان فأكثر) — يُجمع بالترتيب أياً كان موقعه
-    if(name && (name.split(/\s+/).length >= 2)) orderedNames.push(name);
-    if(seat && name) paired.push({ seat, name });
-    else if(seat) idOnly.push(seat);
-  }
-  let students = paired.slice();
-  if(!paired.length && idOnly.length){
-    idOnly.forEach((s,i)=> students.push({ seat:s, name: orderedNames[i]||'' }));
-  } else if(idOnly.length > paired.length){
-    idOnly.forEach((s,i)=> students.push({ seat:s, name:'' }));
-  }
-  // إزالة التكرار بالهوية
-  const seen={}, out=[];
-  students.forEach(st=>{ if(st.seat && !seen[st.seat]){ seen[st.seat]=1; out.push(st); } });
-  return { className, section, students: out, orderedNames };
-}
 function cleanCell(s){ return String(s||'').replace(/[|:：ـ]/g,' ').replace(/\s+/g,' ').trim(); }
 function normalizeDigits(s){ return String(s||'').replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).replace(/[۰-۹]/g,d=>'0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]); }
 function cleanCell(s){ return String(s||'').replace(/[|:：]/g,' ').replace(/\s+/g,' ').trim(); }
@@ -2157,15 +1965,46 @@ function openBandEditor(seat, itemId){
   </div>`).join('') || '<div class="hint">لا محاولات بعد (الطالب يُعدّ غائباً في هذا البند).</div>';
   const avg = itemRatioAvg(entry,itemId);
   const body = document.getElementById('stRecordBody');
+  const classCount = state.students.filter(x=>x.classCode===s.classCode).length;
   body.innerHTML = `<div style="text-align:right;font-weight:800;font-size:16px">${escapeHtml(item.name)} <span style="color:var(--muted);font-size:13px">(الوزن ${toArabic(item.max)})</span></div>
-    <div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:10px">${escapeHtml(s.name)} · ${escapeHtml(period.name)}</div>
+    <div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:10px">${escapeHtml(period.name)}</div>
+    <div style="background:#eef6f4;border:1px solid var(--teal-l);border-radius:10px;padding:10px;margin-bottom:14px">
+      <div style="font-weight:800;color:var(--teal-d);margin-bottom:6px">⚡ إضافة الدرجة لجميع طلاب الصف (${toArabic(classCount)})</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:8px">تُضاف كمحاولة جديدة لكل طلاب «${escapeHtml(classNameByCode(s.classCode)||s.classCode)}» دفعة واحدة، ثم يمكنك تعديل أي طالب بمفرده أدناه.</div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="newAttemptAll" type="number" min="0" max="${item.max}" step="0.5" placeholder="درجة من ${item.max} للجميع" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit">
+        <button class="primary" style="padding:9px 14px;background:#0b7a63" onclick="addAttemptAll('${escapeHtml(seat)}','${itemId}')">للجميع</button>
+      </div>
+    </div>
+    <div style="text-align:right;font-weight:700;font-size:13px;color:var(--ink);margin-bottom:6px">— تعديل الطالب: ${escapeHtml(s.name)} —</div>
     <div style="margin-bottom:10px">${rows}</div>
-    <div style="padding:8px;background:#eef6f4;border-radius:8px;margin-bottom:10px;font-weight:700;color:var(--teal-d)">الدرجة النسبية الحالية: ${avg!=null?toArabic(round1(avg*item.max)):'—'} من ${toArabic(item.max)}</div>
+    <div style="padding:8px;background:#f6eef1;border-radius:8px;margin-bottom:10px;font-weight:700;color:var(--teal-d)">الدرجة النسبية الحالية لهذا الطالب: ${avg!=null?toArabic(round1(avg*item.max)):'—'} من ${toArabic(item.max)}</div>
     <div style="display:flex;gap:8px;align-items:center">
-      <input id="newAttempt" type="number" min="0" max="${item.max}" step="0.5" placeholder="درجة من ${item.max}" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit">
-      <button class="primary" style="padding:9px 14px" onclick="addAttempt('${escapeHtml(seat)}','${itemId}')">إضافة</button>
+      <input id="newAttempt" type="number" min="0" max="${item.max}" step="0.5" placeholder="درجة من ${item.max} لهذا الطالب" style="flex:1;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit">
+      <button class="primary" style="padding:9px 14px" onclick="addAttempt('${escapeHtml(seat)}','${itemId}')">إضافة لهذا الطالب</button>
     </div>`;
   document.getElementById('stRecordOverlay').style.display='block';
+}
+// إضافة الدرجة كمحاولة جديدة لجميع طلاب الصف دفعة واحدة
+function addAttemptAll(seat, itemId){
+  const s = findStudent(seat); if(!s) return;
+  let item=null; state.workCfg.periods.forEach(p=>{ const it=p.items.find(x=>x.id===itemId); if(it)item=it; });
+  if(!item) return;
+  const val = parseFloat(document.getElementById('newAttemptAll').value);
+  if(isNaN(val)){ alert('أدخل درجة صحيحة لإضافتها للجميع.'); return; }
+  const ratio = Math.max(0, Math.min(1, val/(item.max||1)));
+  const classmates = state.students.filter(x=>x.classCode===s.classCode);
+  if(!classmates.length){ alert('لا يوجد طلاب في هذا الصف.'); return; }
+  if(!confirm(`إضافة الدرجة ${toArabic(val)} من ${toArabic(item.max)} كمحاولة جديدة لـ${toArabic(classmates.length)} طالباً في «${item.name}»؟`)) return;
+  classmates.forEach(st=>{
+    const entry = workEntry(st.classCode, st.seat);
+    if(!entry.attempts[itemId]) entry.attempts[itemId]=[];
+    entry.attempts[itemId].push(ratio);
+  });
+  saveWorkLogToCloud();
+  openBandEditor(seat, itemId);
+  renderWorkLog();
+  alert(`تمت إضافة الدرجة لـ${toArabic(classmates.length)} طالباً ✅`);
 }
 function addAttempt(seat, itemId){
   const s = findStudent(seat); if(!s) return;
