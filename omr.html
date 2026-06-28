@@ -3599,14 +3599,53 @@ async function cloudGet(collection, docId){
 /* قراءة مفتاح «إضافة الطلاب للمعلمين» على مستوى المدرسة (غير معزول بالمعلم) */
 async function clsLoadTeacherAdd(){
   try{
-    if(!CLS_SESSION || !CLS_SESSION.schoolId) return;
+    if(!CLS_SESSION || !CLS_SESSION.schoolId){ clsApplyTeacherAdd(); return; }
     const snap = await db.collection('schoolData').doc('roster_'+CLS_SESSION.schoolId).get();
     if(snap.exists){ const d = JSON.parse(snap.data().value||'{}'); CLS_TEACHER_ADD = (d.teacherAdd!==false); }
+  }catch(e){}
+  clsApplyTeacherAdd();
+}
+/* عند الإيقاف: إخفاء بطاقتي «إضافة يدوية» و«استيراد من نور» كاملتين */
+function clsApplyTeacherAdd(){
+  try{
+    ['secManual','secImport'].forEach(id=>{
+      const el=document.getElementById(id); if(!el) return;
+      const card=el.closest('.seccard'); if(card) card.style.display = (CLS_TEACHER_ADD===false)?'none':'';
+    });
   }catch(e){}
 }
 function clsGuardAdd(){
   if(CLS_TEACHER_ADD===false){ alert('إضافة الطلاب موقوفة من إدارة المدرسة حالياً.'); return false; }
   return true;
+}
+/* تزويد روستر المعلم من روستر المدرسة حسب الفصول المسندة له (دمج تراكمي بلا تعارض) */
+async function clsProvisionFromSchool(){
+  try{
+    if(!CLS_SESSION || !CLS_SESSION.schoolId || !CLS_SESSION.userId) return;
+    const uref = await db.collection('users').doc(CLS_SESSION.userId).get();
+    if(!uref.exists) return;
+    const u = uref.data();
+    if(u.role!=='teacher') return;
+    const norm = x=>normalizeDigits(String(x||'')).trim();
+    const assigned = (u.assignedClasses||[]).map(norm).filter(Boolean);
+    if(!assigned.length) return;
+    const snap = await db.collection('schoolData').doc('roster_'+CLS_SESSION.schoolId).get();
+    if(!snap.exists) return;
+    const d = JSON.parse(snap.data().value||'{}');
+    const mClasses = Array.isArray(d.classes)?d.classes:[];
+    const mStudents = Array.isArray(d.students)?d.students:[];
+    let changed=false;
+    assigned.forEach(code=>{
+      const mc = mClasses.find(c=>norm(c.code)===code); if(!mc) return;
+      const realCode = String(mc.code);
+      if(!state.classes.some(c=>norm(c.code)===code)){ state.classes.push({name:mc.name, code:realCode}); changed=true; }
+      mStudents.filter(s=>norm(s.classCode)===code).forEach(s=>{
+        const exists = state.students.some(x=> s.seat && x.seat===s.seat && norm(x.classCode)===code);
+        if(!exists){ state.students.push({seat:s.seat, name:s.name, classCode:realCode}); changed=true; }
+      });
+    });
+    if(changed){ try{ await saveStudentsToCloud(false); }catch(e){} }
+  }catch(e){}
 }
 
 /* ---- الاختبارات (الإعدادات + المفتاح) ---- */
@@ -3903,6 +3942,7 @@ async function loadStudentsFromCloud(manual){
       if(Array.isArray(old)) state.students = old;
     }
     rosterLoaded = true;
+    await clsProvisionFromSchool();
     refreshClassDropdowns(); renderClasses(); renderStudents();
     if(typeof renderWlHeader==='function') renderWlHeader();
     if(typeof renderWlSetup==='function') renderWlSetup();
