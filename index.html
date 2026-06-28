@@ -1591,6 +1591,15 @@ function upsertStudent(st){
 let pendingImport = null;   // { groups:[{className, students:[{seat,name}], code:''}] }
 
 // استيراد من صورة (لقطة شاشة نور) عبر القراءة الضوئية
+function loadImageEl(file){
+  return new Promise((res,rej)=>{
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = ()=>{ res(img); };   // الرابط يبقى صالحاً ما دامت الصورة مستخدمة
+    img.onerror = ()=>{ URL.revokeObjectURL(url); rej(new Error('تعذّر تحميل الصورة')); };
+    img.src = url;
+  });
+}
 function onImageRosterChosen(ev){
   const files = Array.from(ev.target.files||[]);
   ev.target.value='';
@@ -1607,11 +1616,10 @@ function onImageRosterChosen(ev){
       for(let i=0;i<files.length;i++){
         showImportProgress(`قراءة الصورة ${toArabic(i+1)} من ${toArabic(files.length)}…`);
         try{
-          const url = URL.createObjectURL(files[i]);
-          const { data } = await worker.recognize(url);
-          ocrText += data.text + '\n';
-          URL.revokeObjectURL(url);
-        }catch(e){ ocrErr='فشلت قراءة الصورة: '+e.message; }
+          const img = await loadImageEl(files[i]);   // تحميل الصورة كاملةً أولاً
+          const { data } = await worker.recognize(img);
+          ocrText += (data && data.text ? data.text : '') + '\n';
+        }catch(e){ ocrErr='فشلت قراءة الصورة: '+((e&&e.message)||e||'سبب غير معروف'); }
       }
       try{ await worker.terminate(); }catch(_){}
     }
