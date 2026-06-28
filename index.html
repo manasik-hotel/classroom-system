@@ -1725,10 +1725,10 @@ function parseNoorRoster(text){
       c = c.replace(/(القسم|الفصل|النظام|المعلم|المدرسة).*/,'').trim();
       if(c.length>=3) className = c;
     }
-    m = ln.match(/الفصل\s*[:：]?\s*([0-9٠-٩]{1,3})/);
-    if(m && !section){ section = normalizeDigits(m[1]); }
+    m = ln.match(/الفصل\s*[:：]?\s*([1-9][0-9]{0,2})/);
+    if(m && !section){ const sec=normalizeDigits(m[1]); if(sec!=='0') section=sec; }
   }
-  const HEADER = /المدرسة|المعلم|الصف|الفصل|القسم|النظام|الإدارة|الادارة|وزارة|المملكة|كشف|السجل|المدني|الطالب|تقرير/;
+  const HEADER = /المملكة|العربية|السعودية|وزارة|التعليم|الادارة|الإدارة|العامة|للتعليم|بمنطقة|مكة|المكرمة|كشف|بأسماء|الطلاب|بالفصل|المدرسة|الثانوية|الثانوي|المتوسطة|الابتدائية|مسارات|القسم|المشتركة|النظام|الدراسي|منتظم|المعلم|السجل|المدني|الاسم|تقرير|الفصل|الصف/;
   const extractSeat = (norm)=>{
     let groups = norm.match(/\d+/g) || [];
     let seat = groups.find(g=>g.length===10) || groups.find(g=>g.length>=9&&g.length<=11);
