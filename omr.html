@@ -1416,6 +1416,7 @@ function normalizeSeat(s){ return String(s||'').replace(/[٠-٩]/g,d=>'012345678
 
 /* ---- الفصول ---- */
 function addClass(){
+  if(!clsGuardAdd()) return;
   const name=(document.getElementById('clName').value||'').trim();
   const code=(document.getElementById('clCode').value||'').trim();
   if(!name){ alert('أدخل اسم الصف.'); return; }
@@ -1478,6 +1479,7 @@ function nextAutoSeat(classCode){
   return prefix + (max+1);
 }
 function addStudentManual(){
+  if(!clsGuardAdd()) return;
   if(!state.classes.length){ alert('أضف فصلاً واحداً على الأقل قبل تسجيل الطلاب.'); return; }
   const name = (document.getElementById('stName').value||'').trim();
   const rawId = (document.getElementById('stSeat').value||'').trim();
@@ -1496,6 +1498,7 @@ function addStudentManual(){
 }
 // استيراد يدوي (لصق): رقم الهوية ثم الاسم، لصفٍّ محدّد (رقم تلقائي عند غيابه)
 function importStudents(){
+  if(!clsGuardAdd()) return;
   const classCode = document.getElementById('stImportClass').value;
   if(!classCode){ alert('اختر الصف أولاً قبل الاستيراد.'); return; }
   const txt = document.getElementById('stBulk').value||'';
@@ -1718,6 +1721,7 @@ function closeImportReview(){ document.getElementById('importReviewOverlay').sty
 
 // تأكيد الاستيراد: إنشاء الفصول وإضافة الطلاب
 function confirmImport(){
+  if(!clsGuardAdd()) return;
   if(!pendingImport) return;
   // تحقّق: كل صف يحتاج رمزاً
   for(const g of pendingImport.groups){
@@ -3465,7 +3469,7 @@ const firebaseConfig = {
 let db = null, cloudReady = false, rosterLoaded = false;
 
 /* ===== ربط النظام: حارس الدخول + عزل البيانات حسب المدرسة/الفترة/المستخدم ===== */
-let CLS_SESSION = null, CLS_NS = '';
+let CLS_SESSION = null, CLS_NS = '', CLS_TEACHER_ADD = true;
 (function clsAuthGuard(){
   try{ CLS_SESSION = JSON.parse(localStorage.getItem('cls_session')||'null'); }catch(e){ CLS_SESSION = null; }
   if(!CLS_SESSION || !CLS_SESSION.userId){
@@ -3565,6 +3569,7 @@ function initFirebase(){
     db = firebase.firestore();
     cloudReady = true;
     setCloudStatus('ok','✅ متصل بقاعدة البيانات.');
+    clsLoadTeacherAdd();
     loadExamsFromCloud();
     loadResultsFromCloud();
     loadStudentsFromCloud();
@@ -3590,6 +3595,18 @@ async function cloudGet(collection, docId){
   const snap = await db.collection(collection).doc(docId + CLS_NS).get();
   if(!snap.exists) return null;
   try{ return JSON.parse(snap.data().value); }catch(e){ return null; }
+}
+/* قراءة مفتاح «إضافة الطلاب للمعلمين» على مستوى المدرسة (غير معزول بالمعلم) */
+async function clsLoadTeacherAdd(){
+  try{
+    if(!CLS_SESSION || !CLS_SESSION.schoolId) return;
+    const snap = await db.collection('schoolData').doc('roster_'+CLS_SESSION.schoolId).get();
+    if(snap.exists){ const d = JSON.parse(snap.data().value||'{}'); CLS_TEACHER_ADD = (d.teacherAdd!==false); }
+  }catch(e){}
+}
+function clsGuardAdd(){
+  if(CLS_TEACHER_ADD===false){ alert('إضافة الطلاب موقوفة من إدارة المدرسة حالياً.'); return false; }
+  return true;
 }
 
 /* ---- الاختبارات (الإعدادات + المفتاح) ---- */

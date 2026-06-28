@@ -495,9 +495,6 @@ async function openUserModal(id){
     <div class="field" style="margin-bottom:6px"><label>الحالة</label>
       <div class="chip-toggle"><button type="button" class="chip ${!e||e.active!==false?'active':''}" id="umActive">مُفعّل</button>
       <button type="button" class="chip ${e&&e.active===false?'active':''}" id="umInactive">معطّل</button></div></div>
-    <div class="field" id="umRosterField" style="margin-bottom:6px"><label>روستر المعلم في توجيه الملاحظات <span style="color:var(--muted);font-weight:400">(للمعلم فقط)</span></label>
-      <div class="chip-toggle"><button type="button" class="chip ${!e||e.rosterActive!==false?'active':''}" id="umRosterOn">مُفعّل</button>
-      <button type="button" class="chip ${e&&e.rosterActive===false?'active':''}" id="umRosterOff">مُوقف</button></div></div>
     <div class="divider"></div>
     <label style="font-weight:700;font-size:14px">الصفحات والصلاحيات</label>
     <div class="sub-note" style="margin-top:4px">حدّد الوصول، ولكل بند: يسمح بالتعديل / الحذف.</div>
@@ -509,15 +506,9 @@ async function openUserModal(id){
   let activeState = !(e&&e.active===false);
   $('#umActive').onclick=()=>{activeState=true;$('#umActive').classList.add('active');$('#umInactive').classList.remove('active');};
   $('#umInactive').onclick=()=>{activeState=false;$('#umInactive').classList.add('active');$('#umActive').classList.remove('active');};
-  let rosterState = !(e&&e.rosterActive===false);
-  $('#umRosterOn').onclick=()=>{rosterState=true;$('#umRosterOn').classList.add('active');$('#umRosterOff').classList.remove('active');};
-  $('#umRosterOff').onclick=()=>{rosterState=false;$('#umRosterOff').classList.add('active');$('#umRosterOn').classList.remove('active');};
-  const toggleRosterField=()=>{ const f=$('#umRosterField'); if(f) f.style.display = ($('#umRole').value==='teacher')?'block':'none'; };
-  toggleRosterField();
-  $('#umRole').addEventListener('change',toggleRosterField);
-  $('#umRole').onchange=()=>{ editPerms=defaultPerms($('#umRole').value); renderPermTree(); toggleRosterField(); toast('طُبِّقت صلاحيات الدور الافتراضية'); };
+  $('#umRole').onchange=()=>{ editPerms=defaultPerms($('#umRole').value); renderPermTree(); toast('طُبِّقت صلاحيات الدور الافتراضية'); };
   renderPermTree();
-  $('#umSave').onclick=()=>saveUser(activeState, rosterState);
+  $('#umSave').onclick=()=>saveUser(activeState);
 }
 function renderPermTree(){
   const root=$('#permTree'); if(!root) return;
@@ -540,7 +531,7 @@ function renderPermTree(){
     };
   });
 }
-async function saveUser(active, rosterActive){
+async function saveUser(active){
   const school=$('#umSchool').value, user=$('#umUser').value.trim(), pass=$('#umPass').value,
         role=$('#umRole').value,
         classes=$('#umClasses').value.split(/[،,]/).map(s=>s.trim()).filter(Boolean);
@@ -553,7 +544,7 @@ async function saveUser(active, rosterActive){
     const clash=q.docs.find(d=> d.id!==(editUser&&editUser.id));
     if(clash){ alertBox('umAlert','err','اسم المستخدم مستخدم مسبقاً، اختر غيره'); return; }
     const payload={ username:user, password:pass, role, schoolId:school, assignedClasses:classes,
-      permissions:editPerms, active, rosterActive:(rosterActive!==false), updatedAt:Date.now() };
+      permissions:editPerms, active, updatedAt:Date.now() };
     if(editUser){ await usersCol().doc(editUser.id).update(payload); toast('تم تحديث المستخدم'); }
     else { payload.mustChangePassword=true; payload.createdAt=Date.now(); await usersCol().add(payload); toast('تمت إضافة المستخدم'); }
     closeModal(); loadUsersList();
@@ -669,7 +660,7 @@ function confirmModal(title,msg,onYes,danger,withInput){
 /* ========================================================================
    تبويب الفصول والطلاب — روستر المدرسة العام
    ======================================================================== */
-let RClasses=[], RStudents=[], RSchoolId=null, pendingGroups=null;
+let RClasses=[], RStudents=[], RSchoolId=null, pendingGroups=null, RTeacherAdd=true;
 function can(k,f){ if(CURRENT.role==='admin') return true; const p=(CURRENT.permissions||{})[k]; return !!(p&&p[f]); }
 const rosterDoc = sid => db.collection('schoolData').doc('roster_'+sid);
 
@@ -685,11 +676,12 @@ async function loadRoster(){
     const snap=await rosterDoc(RSchoolId).get();
     const d = snap.exists ? JSON.parse(snap.data().value||'{}') : {};
     RClasses=Array.isArray(d.classes)?d.classes:[]; RStudents=Array.isArray(d.students)?d.students:[];
+    RTeacherAdd = (d.teacherAdd!==false);
   }catch(e){ RClasses=[];RStudents=[]; }
   paintClasses();
 }
 async function saveRoster(){
-  await rosterDoc(RSchoolId).set({ value:JSON.stringify({classes:RClasses,students:RStudents}), updatedAt:Date.now(), schoolId:RSchoolId, base:'roster' });
+  await rosterDoc(RSchoolId).set({ value:JSON.stringify({classes:RClasses,students:RStudents,teacherAdd:RTeacherAdd}), updatedAt:Date.now(), schoolId:RSchoolId, base:'roster' });
 }
 function paintClasses(){
   const canEdit=can('index.classes','edit'), canDel=can('index.classes','del');
@@ -700,6 +692,12 @@ function paintClasses(){
       sids.map(([id,s])=>'<option value="'+esc(id)+'"'+(id===RSchoolId?' selected':'')+'>'+esc(s.name)+'</option>').join('')+'</select></div></div>';
   }
   html += '<div class="sub-note">روستر المدرسة العام'+(canEdit?' — يمكنك الاستيراد والتعديل.':' — عرض فقط.')+'</div>';
+  if(canEdit){
+    html += '<div class="card"><div class="set-block"><h3>إضافة الطلاب للمعلمين</h3>'+
+      '<p>عند الإيقاف، لا يستطيع المعلمون إضافة الطلاب (يدوي / نور / لصق) في صفحة التصحيح.</p></div>'+
+      '<div class="chip-toggle"><button type="button" class="chip '+(RTeacherAdd?'active':'')+'" id="rTaOn">مُفعّل</button>'+
+      '<button type="button" class="chip '+(!RTeacherAdd?'active':'')+'" id="rTaOff">مُوقف</button></div></div>';
+  }
   if(canEdit) html += importBlockHtml();
   if(!RClasses.length){
     html += '<div class="empty"><span class="e-emoji">📚</span>لا توجد فصول بعد'+(canEdit?'. استورد من نور أو أضف فصلاً.':'.')+'</div>';
@@ -753,6 +751,12 @@ function wireImport(){
   const fb=$('#rXlsxBtn'), fi=$('#rXlsx'); if(fb&&fi){ fb.onclick=()=>fi.click(); fi.onchange=onSchoolXlsx; }
   const ac=$('#rAddCl'); if(ac) ac.onclick=addClassR;
   const pb=$('#rPasteBtn'); if(pb) pb.onclick=pasteImport;
+  const on=$('#rTaOn'), off=$('#rTaOff');
+  if(on&&off){ on.onclick=()=>setTeacherAdd(true); off.onclick=()=>setTeacherAdd(false); }
+}
+async function setTeacherAdd(val){
+  RTeacherAdd=val; await saveRoster(); paintClasses();
+  toast(val?'تم تفعيل إضافة الطلاب للمعلمين':'تم إيقاف إضافة الطلاب للمعلمين');
 }
 function addClassR(){
   const name=($('#rClName').value||'').trim(), code=($('#rClCode').value||'').trim();
