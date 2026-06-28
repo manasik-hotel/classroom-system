@@ -1632,9 +1632,10 @@ function onPdfRosterChosen(ev){
       const arabicCount = (fullText.match(/[\u0600-\u06FF]/g)||[]).length;
       let parsed;
       if(arabicCount > 20){
-        parsed = parseNoorRoster(fullText);          // مسار سريع
+        parsed = parseNoorRoster(fullText);          // مسار سريع: النص سليم
       } else {
-        // 2) النص مكسور → قراءة ضوئية للصفحات
+        // النص مكسور: الهويات من pdf.js دقيقة، والأسماء من OCR
+        const pdfParsed = parseNoorRoster(fullText);  // هويات صحيحة + أسماء فارغة
         const Tesseract = await ensureTesseract();
         showImportProgress('جارٍ تجهيز محرّك القراءة الضوئية…');
         const worker = await Tesseract.createWorker(['ara','eng']);
@@ -1650,7 +1651,25 @@ function onPdfRosterChosen(ev){
           ocrText += data.text + '\n';
         }
         await worker.terminate();
-        parsed = parseNoorRoster(ocrText);
+        const ocrParsed = parseNoorRoster(ocrText);
+        // خريطة الأسماء من OCR حسب الهوية
+        const nameBySeat = {};
+        ocrParsed.students.forEach(s=>{ if(s.name) nameBySeat[s.seat]=s.name; });
+        let students;
+        if(pdfParsed.students.length){
+          // الهويات من pdf.js (دقيقة) + الاسم من OCR بالمطابقة على الهوية، أو بالترتيب
+          students = pdfParsed.students.map((s,i)=>({
+            seat: s.seat,
+            name: nameBySeat[s.seat] || (ocrParsed.students[i] && ocrParsed.students[i].name) || ''
+          }));
+        } else {
+          students = ocrParsed.students;             // لا هويات من pdf.js → اعتمد OCR كاملاً
+        }
+        parsed = {
+          className: ocrParsed.className || pdfParsed.className,
+          section: ocrParsed.section || pdfParsed.section,
+          students
+        };
       }
       hideImportProgress();
       if(!parsed.students.length){
@@ -1682,41 +1701,66 @@ function groupTextByLines(items){
   });
 }
 
-// تحليل نص كشف نور: استخراج الصف/الفصل + صفوف (رقم، هوية، اسم)
+// تحليل نص كشف نور: استخراج الصف/الفصل + صفوف (رقم، هوية، اسم) — متين لمخرجات OCR
 function parseNoorRoster(text){
-  const lines = text.split(/\n/).map(l=>l.trim()).filter(Boolean);
+  const rawLines = text.split(/\n/).map(l=>l.trim()).filter(Boolean);
   let className='', section='';
-  for(const ln of lines){
-    // «الصف : الأول الثانوي»
-    let m = ln.match(/الصف\s*[:：]\s*(.+)/);
-    if(m && !className){ className = cleanCell(m[1]).replace(/\s*:.*/,'').trim(); }
-    // «الفصل : 6»
-    m = ln.match(/الفصل\s*[:：]\s*([0-9٠-٩]+)/);
+  for(const ln of rawLines){
+    let m = ln.match(/الصف\s*[:：]?\s*([^\d\n:：]{3,})/);
+    if(m && !className){
+      let c = cleanCell(m[1]);
+      // أوقف عند كلمة مفتاحية لاحقة
+      c = c.replace(/(القسم|الفصل|النظام|المعلم|المدرسة).*/,'').trim();
+      if(c.length>=3) className = c;
+    }
+    m = ln.match(/الفصل\s*[:：]?\s*([0-9٠-٩]{1,3})/);
     if(m && !section){ section = normalizeDigits(m[1]); }
   }
-  const students=[];
-  const seen = {};
-  for(const ln of lines){
-    // ابحث عن رقم سجل مدني (9-11 رقم) في السطر
-    const idMatch = ln.match(/([0-9٠-٩]{9,11})/);
-    if(!idMatch) continue;
-    const seat = normalizeDigits(idMatch[1]);
-    if(seat.length<9 || seat.length>11) continue;
-    // الاسم = باقي السطر بعد إزالة الأرقام (التسلسل + الهوية)
-    let rest = ln.replace(idMatch[0],' ');
-    // أزل أي أرقام متبقية (تسلسل/تواريخ)
-    rest = rest.replace(/[0-9٠-٩]+/g,' ');
-    // أبقِ الحروف العربية والمسافات فقط
-    rest = rest.replace(/[^\u0600-\u06FF\s]/g,' ');
+  const HEADER = /المدرسة|المعلم|الصف|الفصل|القسم|النظام|الإدارة|الادارة|وزارة|المملكة|كشف|السجل|المدني|الطالب|تقرير/;
+  const extractSeat = (norm)=>{
+    let groups = norm.match(/\d+/g) || [];
+    let seat = groups.find(g=>g.length===10) || groups.find(g=>g.length>=9&&g.length<=11);
+    if(!seat){
+      const merged = norm.replace(/(\d)[ \u00a0]+(?=\d)/g,'$1');
+      const mg = merged.match(/\d{9,11}/g) || [];
+      seat = mg.find(g=>g.length===10) || mg.sort((a,b)=>b.length-a.length)[0];
+    }
+    return (seat && seat.length>=9 && seat.length<=11) ? seat : '';
+  };
+  const extractName = (norm)=>{
+    const rest = norm.replace(/\d+/g,' ').replace(/[^\u0600-\u06FF\s]/g,' ');
     const name = cleanCell(rest);
-    if(!name || name.replace(/\s/g,'').length<4) continue;   // اسم قصير جداً = ضوضاء
-    // تجاهل أسطر الترويسة (تحوي كلمات مفتاحية)
-    if(/المدرسة|المعلم|الصف|الفصل|القسم|النظام|الإدارة|وزارة|المملكة|كشف|ReportID/.test(name)) continue;
-    if(seen[seat]) continue; seen[seat]=1;
-    students.push({ seat, name });
+    if(name.replace(/\s/g,'').length < 4) return '';
+    if(HEADER.test(name)) return '';
+    return name;
+  };
+  const paired=[], idOnly=[], nameOnly=[];
+  for(let ln of rawLines){
+    const norm = normalizeDigits(ln);
+    const seat = extractSeat(norm);
+    const name = extractName(norm);
+    if(seat && name) paired.push({ seat, name });
+    else if(seat) idOnly.push(seat);
+    else if(name) nameOnly.push(name);
   }
-  return { className, section, students };
+  // إن كانت معظم الصفوف مقترنة (نفس السطر) → اعتمدها
+  let students = paired.slice();
+  // حالة الأعمدة المنفصلة: اربط الهويات اليتيمة بالأسماء اليتيمة بالترتيب
+  if(idOnly.length && (paired.length < idOnly.length)){
+    const n = Math.max(idOnly.length, 0);
+    for(let i=0;i<n;i++){
+      students.push({ seat: idOnly[i], name: nameOnly[i] || '' });
+    }
+  } else if(!paired.length && idOnly.length){
+    idOnly.forEach((s,i)=> students.push({ seat:s, name: nameOnly[i]||'' }));
+  }
+  // إزالة التكرار بالهوية
+  const seen={}, out=[];
+  students.forEach(st=>{ if(st.seat && !seen[st.seat]){ seen[st.seat]=1; out.push(st); } });
+  return { className, section, students: out };
 }
+function cleanCell(s){ return String(s||'').replace(/[|:：ـ]/g,' ').replace(/\s+/g,' ').trim(); }
+function normalizeDigits(s){ return String(s||'').replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).replace(/[۰-۹]/g,d=>'0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)]); }
 function cleanCell(s){ return String(s||'').replace(/[|:：]/g,' ').replace(/\s+/g,' ').trim(); }
 function normalizeDigits(s){ return String(s||'').replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]); }
 
