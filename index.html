@@ -399,6 +399,18 @@ function enterApp(){
   });
   if(!tabs.find(t=>t.key===activeTab)) activeTab = tabs.length?tabs[0].key:null;
   renderTabs(); renderPanel();
+  watchActive();
+}
+let _activeUnsub=null;
+function watchActive(){
+  if(_activeUnsub){ try{_activeUnsub();}catch(e){} _activeUnsub=null; }
+  if(!CURRENT||!CURRENT.id||CURRENT.role==='admin') return;
+  _activeUnsub = usersCol().doc(CURRENT.id).onSnapshot(snap=>{
+    if(!snap.exists || snap.data().active===false){
+      try{_activeUnsub&&_activeUnsub();}catch(e){} _activeUnsub=null;
+      logout(); alertBox('loginAlert','err','تم تعطيل حسابك من قبل المسؤول.');
+    }
+  }, ()=>{});
 }
 function renderTabs(){
   [...$('#tabbar').children].forEach((b,i)=> b.classList.toggle('active', visibleTabs()[i] && visibleTabs()[i].key===activeTab));
@@ -485,16 +497,16 @@ async function openUserModal(id){
   const roleOpts = Object.entries(ROLES).filter(([k])=>k!=='admin').map(([k,v])=>`<option value="${k}" ${e&&e.role===k?'selected':''}>${esc(v)}</option>`).join('');
   modal(`<h2>${e?'تعديل مستخدم':'إضافة مستخدم'}</h2>
     <div id="umAlert"></div>
+    <div class="field" style="margin-bottom:6px"><label>حالة الحساب</label>
+      <div class="chip-toggle"><button type="button" class="chip ${!e||e.active!==false?'active':''}" id="umActive">مُفعّل</button>
+      <button type="button" class="chip ${e&&e.active===false?'active':''}" id="umInactive">معطّل</button></div></div>
     <div class="field"><label>المدرسة</label><select id="umSchool">
       <option value="">— اختر المدرسة —</option>${schoolOpts}</select></div>
     <div class="field"><label>اسم المستخدم</label><input id="umUser" value="${e?esc(e.username):''}" placeholder="فريد لكل الموقع"></div>
     <div class="field"><label>كلمة المرور</label><input id="umPass" value="${e?esc(e.password):''}" placeholder="كلمة المرور"></div>
     <div class="field"><label>الدور</label><select id="umRole">${roleOpts}</select></div>
-    <div class="field"><label>الفصول المسندة <span style="color:var(--muted);font-weight:400">(افصل بفاصلة)</span></label>
-      <input id="umClasses" value="${e&&e.assignedClasses?esc(e.assignedClasses.join('، ')):''}" placeholder="مثال: ١٠٨، ٢٠٣"></div>
-    <div class="field" style="margin-bottom:6px"><label>الحالة</label>
-      <div class="chip-toggle"><button type="button" class="chip ${!e||e.active!==false?'active':''}" id="umActive">مُفعّل</button>
-      <button type="button" class="chip ${e&&e.active===false?'active':''}" id="umInactive">معطّل</button></div></div>
+    <div class="field"><label>الفصول المسندة <span style="color:var(--muted);font-weight:400">(اختر فصلاً أو أكثر)</span></label>
+      <div id="umClassesHost"><div class="sub-note" style="margin:0">اختر المدرسة أولاً.</div></div></div>
     <div class="divider"></div>
     <label style="font-weight:700;font-size:14px">الصفحات والصلاحيات</label>
     <div class="sub-note" style="margin-top:4px">حدّد الوصول، ولكل بند: يسمح بالتعديل / الحذف.</div>
@@ -506,9 +518,24 @@ async function openUserModal(id){
   let activeState = !(e&&e.active===false);
   $('#umActive').onclick=()=>{activeState=true;$('#umActive').classList.add('active');$('#umInactive').classList.remove('active');};
   $('#umInactive').onclick=()=>{activeState=false;$('#umInactive').classList.add('active');$('#umActive').classList.remove('active');};
+  $('#umSchool').onchange=()=>{ const sid=$('#umSchool').value; loadModalClasses(sid, (e&&e.schoolId===sid)?(e.assignedClasses||[]):[]); };
+  loadModalClasses(e?e.schoolId:'', e?e.assignedClasses:[]);
   $('#umRole').onchange=()=>{ editPerms=defaultPerms($('#umRole').value); renderPermTree(); toast('طُبِّقت صلاحيات الدور الافتراضية'); };
   renderPermTree();
   $('#umSave').onclick=()=>saveUser(activeState);
+}
+async function loadModalClasses(schoolId, pre){
+  const host=$('#umClassesHost'); if(!host) return;
+  if(!schoolId){ host.innerHTML='<div class="sub-note" style="margin:0">اختر المدرسة أولاً لعرض الفصول.</div>'; return; }
+  host.innerHTML='<div class="sub-note" style="margin:0">جارٍ تحميل الفصول…</div>';
+  let classes=[];
+  try{ const s=await rosterDoc(schoolId).get(); if(s.exists){ const d=JSON.parse(s.data().value||'{}'); classes=Array.isArray(d.classes)?d.classes:[]; } }catch(err){}
+  if(!classes.length){ host.innerHTML='<div class="sub-note" style="margin:0">لا توجد فصول في روستر هذه المدرسة بعد. أضِفها من تبويب «الفصول والطلاب».</div>'; return; }
+  const preset=(pre||[]).map(String);
+  host.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px">'+classes.map(c=>
+    '<label style="display:flex;align-items:center;gap:6px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface-2);font-weight:600;font-size:13.5px;cursor:pointer">'+
+    '<input type="checkbox" class="umCls" value="'+esc(c.code)+'" '+(preset.includes(String(c.code))?'checked':'')+' style="width:17px;height:17px;accent-color:var(--accent)">'+esc(c.name)+'</label>'
+  ).join('')+'</div>';
 }
 function renderPermTree(){
   const root=$('#permTree'); if(!root) return;
@@ -534,7 +561,7 @@ function renderPermTree(){
 async function saveUser(active){
   const school=$('#umSchool').value, user=$('#umUser').value.trim(), pass=$('#umPass').value,
         role=$('#umRole').value,
-        classes=$('#umClasses').value.split(/[،,]/).map(s=>s.trim()).filter(Boolean);
+        classes=[...document.querySelectorAll('.umCls:checked')].map(x=>x.value);
   if(!school){ alertBox('umAlert','err','اختر المدرسة'); return; }
   if(!user){ alertBox('umAlert','err','أدخل اسم المستخدم'); return; }
   if(!pass){ alertBox('umAlert','err','أدخل كلمة المرور'); return; }

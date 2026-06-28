@@ -3570,6 +3570,7 @@ function initFirebase(){
     cloudReady = true;
     setCloudStatus('ok','✅ متصل بقاعدة البيانات.');
     clsLoadTeacherAdd();
+    clsWatchActive();
     loadExamsFromCloud();
     loadResultsFromCloud();
     loadStudentsFromCloud();
@@ -3617,6 +3618,18 @@ function clsApplyTeacherAdd(){
 function clsGuardAdd(){
   if(CLS_TEACHER_ADD===false){ alert('إضافة الطلاب موقوفة من إدارة المدرسة حالياً.'); return false; }
   return true;
+}
+/* طرد المستخدم فور تعطيله (أو عند التحديث إن كان معطّلاً) */
+function clsWatchActive(){
+  try{
+    if(!CLS_SESSION || !CLS_SESSION.userId) return;
+    db.collection('users').doc(CLS_SESSION.userId).onSnapshot(snap=>{
+      if(!snap.exists || snap.data().active===false){
+        try{ localStorage.removeItem('cls_session'); }catch(e){}
+        location.replace('index.html');
+      }
+    }, ()=>{});
+  }catch(e){}
 }
 /* تزويد روستر المعلم من روستر المدرسة حسب الفصول المسندة له (دمج تراكمي بلا تعارض) */
 async function clsProvisionFromSchool(){
