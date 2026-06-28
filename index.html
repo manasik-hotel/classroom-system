@@ -204,7 +204,6 @@
       </label>
       <button class="primary" onclick="renderSheet()">تحديث المعاينة</button>
       <button id="writeQBtn" class="primary no-print" style="margin-top:10px;display:none" onclick="openQEditor()">✍️ كتابة الأسئلة والمعاينة</button>
-      <p class="hint" style="color:#d32f2f;font-weight:600">الأنواع: <b>اختيار من متعدد</b> (٢–٥ خيارات)، <b>صواب/خطأ</b> (دائرتان ص/خ)، <b>مزاوجة</b>. في شكل «أسئلة + إجابة» تُطبَّق حدود تلقائية على عدد الأسئلة حسب أسلوب التعريف. المربعات السوداء في الأركان ضرورية للقراءة.</p>
     </div>
 
     <div class="card">
@@ -271,20 +270,23 @@
     <div class="card seccard">
       <div class="secheader" onclick="toggleSec('secImport',this)">
         <div class="secicon" style="background:#e7f7ee">📥</div>
-        <div class="sectext"><div class="sectitle">استيراد من نور أو ملف جاهز</div><div class="secdesc">استيراد بيانات الطلاب من ملف PDF أو Excel</div></div>
+        <div class="sectext"><div class="sectitle">استيراد من نور أو ملف جاهز</div><div class="secdesc">استيراد بيانات الطلاب من ملف Excel</div></div>
         <div class="secarrow">‹</div>
       </div>
       <div id="secImport" class="seccontent" style="display:none">
         <div class="subcard">
-          <div class="subtitle">📊 استيراد من ملف Excel (نور) <span class="sub">الأسماء والهويات بدقّة</span></div>
+          <div class="subtitle">📊 استيراد من ملف Excel (نور) <span class="sub">الأسماء ورقم الهوية بدقّة</span></div>
           <div class="hint" style="background:#eef6f4;border:1px solid var(--teal-l);border-radius:10px;padding:10px;margin-top:4px;line-height:1.9">
             <b>طريقة تصدير الأسماء من نور:</b><br>
-            افتح <b>نور</b> ← <b>تقارير</b> ← <b>تقارير أخرى</b> ← <b>كشف بأسماء الطلاب</b> ← <b>تصدير الأسماء بالصف</b> (اختر صيغة Excel).<br>
-            ثم ارفع الملف هنا — يكتشف النظام <b>الصف والفصل والأسماء والهويات</b> تلقائياً.
+            افتح <b>نور</b> ← <b>التقارير</b> ← <b>تقارير أخرى</b> ← <b>كشف بأسماء الطلاب</b> ← <b>تصدير الأسماء بالصف</b> (اختر صيغة Excel).<br>
+            ثم ارفع الملف هنا — يكتشف النظام <b>الصف والفصل والأسماء ورقم الهوية</b> تلقائياً.
           </div>
           <input id="xlsxFile" type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="onXlsxChosen(event)">
           <button class="primary" style="margin-top:10px;background:#0b7a63" onclick="document.getElementById('xlsxFile').click()">📂 اختيار ملف Excel من نور</button>
-          <div style="margin:14px 0 6px;font-size:12px;color:var(--muted)">أو الصق الصفوف يدوياً (رقم الهوية ثم الاسم، سطر لكل طالب):</div>
+        </div>
+        <div class="subcard">
+          <div class="subtitle">📋 استيراد نص ملصق <span class="sub">لصق يدوي</span></div>
+          <div style="margin:4px 0 6px;font-size:12px;color:var(--muted)">الصق الصفوف يدوياً (رقم الهوية ثم الاسم، سطر لكل طالب):</div>
           <textarea id="stBulk" rows="4" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;font-weight:600;color:var(--ink);background:#fcfdfd" placeholder="1061532883&#9;محمد نجيب حكمي&#10;1061532884&#9;أحمد علي"></textarea>
           <label class="field" style="margin-top:10px">الصف الذي ستُضاف إليه الدفعة الملصقة
             <select id="stImportClass"><option value="">— اختر الصف —</option></select>
@@ -315,9 +317,8 @@
           </div>
         </div>
         <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد.</div></div>
-        <p class="hint" style="margin:10px 0 0;line-height:1.9">📌 <b>تسجيل الحضور والغياب:</b> اضغط رقم الهوية لتحديد الحالة وكتابة ملاحظة.<br>📌 <b>الملاحظات ونقل الطلاب:</b> اختر الطالب من خانة الاختيار.</p>
+        <p class="hint" style="margin:10px 0 0;line-height:1.9">📌 <b>عرض سجل الطالب:</b> اضغط رقم الهوية.<br>📌 <b>تسجيل الحضور والغياب والتأخّر:</b> اضغط اسم الطالب.<br>📌 <b>لإرسال الملاحظات للإدارة أو نقل الطلاب بين الفصول:</b> اختر الطالب من خانة الاختيار، تظهر الخيارات بالأعلى.</p>
         <button class="primary" style="margin-top:12px;width:100%;background:#0b7a63" onclick="commitAttendance()">💾 الحفظ في سجل الأعمال</button>
-        <p class="hint" style="margin-top:6px">يسجّل حضور/غياب/تأخّر كل طلاب العرض الحالي بتاريخ اليوم (غير المحدَّد = حاضر)، تراكمياً في سجل الأعمال. الحالة اللحظية تُصفَّر بعد ٩٠ دقيقة تلقائياً.</p>
       </div>
     </div>
   </section>
@@ -446,7 +447,7 @@
       </div>
     </div>
     <div class="card">
-      <h2>سجل الأعمال <span class="sub">غياب · بنود الفترات حسب الصف</span></h2>
+      <h2>سجل الأعمال</h2>
       <div id="cloudStatus" class="status info" style="margin-bottom:10px">جارٍ التهيئة…</div>
       <label class="field">عرض سجل الصف
         <select id="wlViewClass" onchange="renderWorkLog()"><option value="">— اختر الصف —</option></select>
@@ -1516,24 +1517,43 @@ function onXlsxChosen(ev){
   reader.onload = (e)=>{
     try{
       const wb = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, {header:1, blankrows:false, defval:''});
-      const parsed = parseExcelRoster(rows);
-      if(!parsed.students.length){ alert('لم يُعثر على بيانات طلاب صالحة في الملف. تأكّد أنه «كشف بأسماء الطلاب» المُصدَّر من نور.'); return; }
-      // العنوان: الصف ثم الفصل (مثال: «الأول الثانوي 6»)
-      let className = parsed.grade || '';
-      if(parsed.section) className = (className ? className + ' ' : '') + parsed.section;
-      if(!className && parsed.byClass){
-        const groups = Object.keys(parsed.byClass).map(cn=>({ className: cn||'صف', students: parsed.byClass[cn], code:'' }));
-        pendingImport = { groups };
-      } else {
-        if(!className) className = 'صف';
-        pendingImport = { groups:[{ className, students: parsed.students, code:'' }] };
-      }
+      // اقرأ كل أوراق العمل وادمج الطلاب (نور قد يوزّع الطلاب على عدّة Sheets)
+      let grade='', section='', allStudents=[]; const seen={};
+      wb.SheetNames.forEach(sn=>{
+        const ws = wb.Sheets[sn]; if(!ws) return;
+        const rows = XLSX.utils.sheet_to_json(ws, {header:1, blankrows:false, defval:''});
+        const p = parseExcelRoster(rows);
+        if(!grade && p.grade) grade = p.grade;
+        if(!section && p.section) section = p.section;
+        (p.students||[]).forEach(st=>{
+          const key = st.seat || ('name:'+st.name);
+          if(seen[key]) return; seen[key]=1;
+          allStudents.push(st);
+        });
+      });
+      if(!allStudents.length){ alert('لم يُعثر على بيانات طلاب صالحة في الملف. تأكّد أنه «كشف بأسماء الطلاب» المُصدَّر من نور.'); return; }
+      // العنوان: الصف ثم الفصل (مثال: «الأول الثانوي 8»)
+      let className = grade || '';
+      if(section) className = (className ? className + ' ' : '') + section;
+      if(!className) className = 'صف';
+      // اقتراح رمز الصف تلقائياً من الصف والفصل (أول ثانوي=100، ثاني=200، ثالث=300 + الفصل)
+      const code = suggestClassCode(grade, section);
+      pendingImport = { groups:[{ className, students: allStudents, code }] };
       openImportReview();
     }catch(err){ alert('تعذّرت قراءة الملف: '+err.message); }
   };
   reader.readAsArrayBuffer(file);
+}
+// اقتراح رمز الصف: الأول ثانوي→100، الثاني→200، الثالث→300، يُضاف رقم الفصل
+function suggestClassCode(grade, section){
+  const g = String(grade||'');
+  let base = 0;
+  if(/الأول|اول|الاول/.test(g)) base = 100;
+  else if(/الثاني|ثاني/.test(g)) base = 200;
+  else if(/الثالث|ثالث/.test(g)) base = 300;
+  const sec = parseInt(normalizeDigits(String(section||'')).replace(/[^0-9]/g,''),10);
+  if(base && !isNaN(sec)) return String(base + sec);
+  return '';
 }
 // تحليل ملف Excel المُصدَّر من نور: الصف/الفصل من الترويسة + الأسماء والهويات من الجدول
 function parseExcelRoster(rows){
@@ -1658,10 +1678,10 @@ function openImportReview(){
     html += `<div class="subcard" style="margin-bottom:12px">
       <div style="font-weight:800;color:var(--teal-d)">${escapeHtml(g.className)}</div>
       <div class="hint" style="margin:4px 0 8px">عدد الطلاب المكتشفين: <b>${toArabic(g.students.length)}</b></div>
-      <label class="field" style="margin-bottom:6px">رمز الصف لهذا الصف
-        <input id="impCode${gi}" inputmode="numeric" value="${escapeHtml(g.code||'')}" placeholder="مثال: 106" oninput="setImportCode(${gi},this.value)">
+      <label class="field" style="margin-bottom:6px">رمز الصف لهذا الصف ${g.code?'<span style="color:var(--ok);font-weight:700">(اقتُرح تلقائياً)</span>':''}
+        <input id="impCode${gi}" inputmode="numeric" value="${escapeHtml(g.code||'')}" placeholder="مثال: 108" oninput="setImportCode(${gi},this.value)">
       </label>
-      <div class="hint" style="background:#eef6f4;padding:8px;border-radius:8px">مثال توضيحي: «${escapeHtml(g.className)}» ← رمز الصف <b>١٠٦</b>. (يُستخدم لتعريف الفصل وتجميع طلابه.)</div>
+      <div class="hint" style="background:#eef6f4;padding:8px;border-radius:8px;line-height:1.9">صيغة الرمز: <b>الأول ثانوي = ١٠٠</b> · <b>الثاني = ٢٠٠</b> · <b>الثالث = ٣٠٠</b> + رقم الفصل.<br>مثال: «الأول الثانوي ٨» ← الرمز <b>١٠٨</b>. (يُستخدم لتعريف الفصل وتجميع طلابه.)</div>
       <details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--teal-d);font-size:13px">مراجعة الأسماء والهويات (${toArabic(g.students.length)}) — يمكنك تعديل أي اسم</summary>
         <div style="max-height:240px;overflow-y:auto;margin-top:6px;font-size:12px">
         ${g.students.map((s,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #eef2f1">
@@ -1793,10 +1813,13 @@ function renderStudents(){
     const att = state.attendance[s.seat];               // {status,note,ts} أو undefined
     const rowBg = att ? `background:${attBg[att.status]}` : '';
     const menuOpen = state.attMenuSeat===s.seat;
-    let idCell;
+    // رقم الهوية: يفتح سجل الطالب
+    const idCell = `<span style="font-weight:700;cursor:pointer;color:var(--teal-d);border-bottom:1px dotted var(--teal-d)" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span>`;
+    // الاسم: يفتح قائمة الحضور (حاضر/متأخر/غائب + ملاحظة)
+    let nameCell;
     if(menuOpen){
-      idCell = `<div style="display:flex;flex-direction:column;gap:5px;min-width:200px">
-        <div style="display:flex;gap:4px;justify-content:center">
+      nameCell = `<div style="display:flex;flex-direction:column;gap:5px;min-width:200px">
+        <div style="display:flex;gap:4px;justify-content:flex-start;flex-wrap:wrap">
           <button class="ghost" style="padding:5px 8px;font-size:11px;background:#e7f7ee;color:var(--ok)" onclick="setAttendance('${escapeHtml(s.seat)}','present')">حاضر</button>
           <button class="ghost" style="padding:5px 8px;font-size:11px;background:#fff4e0;color:var(--warn)" onclick="setAttendance('${escapeHtml(s.seat)}','late')">متأخر</button>
           <button class="ghost" style="padding:5px 8px;font-size:11px;background:#fdecec;color:var(--bad)" onclick="setAttendance('${escapeHtml(s.seat)}','absent')">غائب</button>
@@ -1804,14 +1827,14 @@ function renderStudents(){
         <input id="attNote" placeholder="ملاحظة (اختياري)" value="${escapeHtml(att&&att.note||'')}" style="padding:6px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px;text-align:right">
       </div>`;
     } else {
-      const badge = att ? `<div style="font-size:10px;color:var(--muted);margin-top:2px">${attLbl[att.status]}${att.note?' • '+escapeHtml(att.note):''}</div>` : '';
-      idCell = `<span style="font-weight:700;cursor:pointer;border-bottom:1px dotted var(--muted)" onclick="openAttMenu('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span>${badge}`;
+      const badge = att ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${attLbl[att.status]}${att.note?' • '+escapeHtml(att.note):''}</div>` : '';
+      nameCell = `<span style="cursor:pointer;color:var(--teal-d);font-weight:700;font-size:15px;line-height:1.6;text-decoration:underline" onclick="openAttMenu('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span>${badge}`;
     }
     html += `<tr style="${rowBg}">
       <td><input type="checkbox" ${chk} style="width:18px;height:18px" onchange="toggleSelStudent('${escapeHtml(s.seat)}',this.checked)"></td>
       <td>${i+1}</td>
       <td>${idCell}</td>
-      <td style="text-align:right"><span style="cursor:pointer;color:var(--teal-d);font-weight:600;text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span></td>
+      <td style="text-align:right">${nameCell}</td>
       <td>${escapeHtml(classNameByCode(s.classCode)||s.classCode||'—')}</td>
       <td><button class="ghost" style="padding:6px 8px;color:var(--bad)" onclick="delStudent('${escapeHtml(s.seat)}')">حذف</button></td>
     </tr>`;
@@ -2052,7 +2075,18 @@ function renderWlSetup(){
     });
   });
   html += `<button class="ghost" style="margin-top:14px;width:100%" onclick="saveWlCfg()">💾 حفظ إعداد السجل</button>`;
+  html += `<button class="ghost" style="margin-top:8px;width:100%;color:var(--bad);border-color:var(--bad)" onclick="restoreDefaultWlCfg()">↩️ استعادة البنود الافتراضية</button>`;
   host.innerHTML = html;
+}
+// استعادة بنود السجل الافتراضية (لا يمسّ درجات الطلاب)
+function restoreDefaultWlCfg(){
+  if(!confirm('استعادة البنود الافتراضية؟\nسيُعاد ضبط أسماء البنود وأوزانها والمخفيّ منها إلى الوضع الأصلي.\n(درجات الطلاب المسجّلة لا تُحذف.)')) return;
+  const hdr = state.workCfg && state.workCfg.header ? state.workCfg.header : null;
+  state.workCfg = defaultWorkCfg();
+  if(hdr) state.workCfg.header = hdr;   // أبقِ ترويسة السجل كما هي
+  saveStudentsToCloud();
+  renderWlSetup(); renderWorkLog();
+  alert('تمت استعادة البنود الافتراضية ✅');
 }
 function setPeriodName(pi,v){ state.workCfg.periods[pi].name=v; }
 function setItemName(pi,ii,v){ state.workCfg.periods[pi].items[ii].name=v; }
@@ -2206,9 +2240,10 @@ function buildExportHTML(o){
   return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
   <title>${escapeHtml(o.title)}</title>
   <style>
-    @page{ size:A4 ${o.landscape?'landscape':'portrait'}; margin:8mm; }
+    @page{ size:A4 landscape; margin:6mm; }
     *{box-sizing:border-box}
-    body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#222;margin:0;padding:14px}
+    body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#222;margin:0;padding:10px}
+    .sheet{width:100%;max-width:1000px;margin:0 auto}
     .bar{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${pal.line};padding-bottom:8px;margin-bottom:8px}
     .right{font-size:12px;line-height:1.7;text-align:right}
     .center{text-align:center}
@@ -2218,26 +2253,27 @@ function buildExportHTML(o){
     .left .row{display:flex;gap:6px}
     .left .lbl{color:${pal.plain?'#000':pal.head};font-weight:700;min-width:84px}
     .left .val{flex:1;border-bottom:1px dotted #aaa;min-height:16px}
-    table{width:100%;border-collapse:collapse;font-size:10.5px;margin-top:6px}
-    th,td{border:1px solid ${pal.line};padding:3px;text-align:center}
+    table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:10px;margin-top:6px}
+    th,td{border:1px solid ${pal.line};padding:2px;text-align:center;overflow:hidden;word-wrap:break-word}
     th{background:${pal.soft};color:${pal.plain?'#000':pal.head}}
-    th.pr{background:${headBg};color:${headTx};font-size:12px}
-    th.it{font-size:9.5px;font-weight:600}
+    th.pr{background:${headBg};color:${headTx};font-size:11px}
+    th.it{font-size:8.5px;font-weight:600}
     th.tot,td.tot{background:${pal.soft2};font-weight:800}
     th.grp,td.grp{background:${pal.grp};color:${pal.grpTx};font-weight:700}
-    .mx{display:inline-block;margin-top:2px;background:#fff;color:${pal.plain?'#000':pal.head};border:1px solid ${pal.line};border-radius:50%;padding:0 5px;font-size:9px}
-    td.nm{text-align:right;min-width:120px;font-weight:600}
-    td.num{width:24px;color:#888}
+    .mx{display:inline-block;margin-top:1px;background:#fff;color:${pal.plain?'#000':pal.head};border:1px solid ${pal.line};border-radius:50%;padding:0 4px;font-size:8px}
+    td.nm{text-align:right;font-weight:600;width:15%;font-size:9px}
+    td.num{width:3%;color:#888}
     td[contenteditable]:focus{outline:2px solid ${pal.line};background:#fffef7}
-    .toolbar{position:sticky;top:0;background:#fff;padding:8px 0;margin-bottom:6px;display:flex;gap:8px;border-bottom:1px solid #eee}
+    .toolbar{position:sticky;top:0;background:#fff;padding:8px 0;margin-bottom:6px;display:flex;gap:8px;border-bottom:1px solid #eee;flex-wrap:wrap}
     .toolbar button{padding:9px 16px;border:none;border-radius:8px;font:inherit;font-weight:700;cursor:pointer;background:${pal.plain?'#444':pal.head};color:#fff}
     .toolbar .hint{font-size:12px;color:#777;align-self:center}
-    @media print{ .toolbar{display:none} body{padding:0} }
+    @media print{ .toolbar{display:none} body{padding:0} .sheet{max-width:none} }
   </style></head><body>
   <div class="toolbar">
     <button onclick="window.print()">🖨️ تصدير / طباعة PDF</button>
-    <span class="hint">يمكنك تعديل أي خلية قبل التصدير، ثم اختر «حفظ كـ PDF» من نافذة الطباعة.</span>
+    <span class="hint">للحصول على أفضل عرض: من نافذة الطباعة اختر الاتجاه «أفقي / Landscape» ومقاس A4. الجدول مضبوط ليظهر كاملاً في عرض الورقة دون تقطيع.</span>
   </div>
+  <div class="sheet">
   <div class="bar">
     <div class="right">المملكة العربية السعودية<br>وزارة التعليم<br>${escapeHtml(o.h.edu||'')}<br>${escapeHtml(o.h.school||'')}</div>
     <div class="center">${o.logo}<h1>سجل أعمال السنة</h1>${o.subtitle?`<div class="sub">${escapeHtml(o.subtitle)}</div>`:''}</div>
@@ -2251,6 +2287,7 @@ function buildExportHTML(o){
     </div>
   </div>
   <table><thead><tr>${o.head1}</tr><tr>${o.head2}</tr></thead><tbody>${o.rows}</tbody></table>
+  </div>
   </body></html>`;
 }
 
@@ -3383,13 +3420,16 @@ function periodGroups(prefix){
     { id:prefix+'_g2', name:'تقويمات وتحريرية وعملية', parts:[prefix+'_app',prefix+'_theory'] },
   ];
 }
-state.workCfg = {
-  periods: [
-    { name:'الفترة الأولى', items: defaultPeriodItems('p1'), groups: periodGroups('p1') },
-    { name:'الفترة الثانية', items: defaultPeriodItems('p2'), groups: periodGroups('p2') },
-  ],
-  header: { edu:'', school:'', teacher:'', year:'', term:'', principal:'' }
-};
+function defaultWorkCfg(){
+  return {
+    periods: [
+      { name:'الفترة الأولى', items: defaultPeriodItems('p1'), groups: periodGroups('p1') },
+      { name:'الفترة الثانية', items: defaultPeriodItems('p2'), groups: periodGroups('p2') },
+    ],
+    header: { edu:'', school:'', teacher:'', year:'', term:'', principal:'' }
+  };
+}
+state.workCfg = defaultWorkCfg();
 // مجموع وزن بنود الفترة الظاهرة (يتجاهل المخفيّة)
 function periodTotal(p){ return (p.items||[]).filter(it=>!it.hidden).reduce((s,it)=>s+(+it.max||0),0); }
 // وزن بند مجمّع = مجموع أوزان أجزائه الظاهرة
