@@ -497,6 +497,13 @@
   </div>
 </div>
 
+<!-- نافذة الحضور (وسط الشاشة) -->
+<div id="attOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,30,28,.55);z-index:10000;overflow-y:auto;padding:16px" onclick="if(event.target===this)closeAttMenu()">
+  <div style="max-width:360px;margin:18vh auto 0;background:#fff;border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <div id="attBody"></div>
+  </div>
+</div>
+
 <!-- نافذة نوع الدرجة عند حفظ الدرجات -->
 <div id="gradeTypeOverlay" style="display:none;position:fixed;inset:0;background:rgba(15,30,28,.55);z-index:9999;overflow-y:auto;padding:16px">
   <div style="max-width:480px;margin:40px auto;background:#fff;border-radius:16px;padding:18px;box-shadow:0 20px 60px rgba(0,0,0,.3)">
@@ -1805,31 +1812,18 @@ function renderStudents(){
   const cnt = document.getElementById('stCount'); if(cnt) cnt.textContent = `${toArabic(list.length)} طالب`;
   if(!state.classes.length){ host.innerHTML='<div class="empty">أضف فصلاً أولاً، ثم سجّل الطلاب.</div>'; updateBulkBar(); return; }
   if(!list.length){ host.innerHTML='<div class="empty">لا يوجد طلاب في هذا العرض.</div>'; updateBulkBar(); return; }
-  const attBg = { present:'#e7f7ee', late:'#fff4e0', absent:'#fdecec' };
-  const attLbl = { present:'حاضر', late:'متأخر', absent:'غائب' };
+  const attBg = { excused:'#e7f7ee', late:'#fff4e0', absent:'#fdecec' };   // مستأذن أخضر · متأخر أصفر · غائب أحمر (حاضر = أبيض)
+  const attLbl = { present:'حاضر', excused:'مستأذن', late:'متأخر', absent:'غائب' };
   let html='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="min-width:520px"><thead><tr><th></th><th>#</th><th>رقم الهوية</th><th>اسم الطالب</th><th>الصف</th><th></th></tr></thead><tbody>';
   list.forEach((s,i)=>{
     const chk = state.selectedStudents[s.seat] ? 'checked':'';
-    const att = state.attendance[s.seat];               // {status,note,ts} أو undefined
-    const rowBg = att ? `background:${attBg[att.status]}` : '';
-    const menuOpen = state.attMenuSeat===s.seat;
+    const att = effectiveAtt(s);                        // الحالة الفعلية لليوم (لحظية أو محفوظة)
+    const rowBg = (att && attBg[att.status]) ? `background:${attBg[att.status]}` : '';
     // رقم الهوية: يفتح سجل الطالب
     const idCell = `<span style="font-weight:700;cursor:pointer;color:var(--teal-d);border-bottom:1px dotted var(--teal-d)" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span>`;
-    // الاسم: يفتح قائمة الحضور (حاضر/متأخر/غائب + ملاحظة)
-    let nameCell;
-    if(menuOpen){
-      nameCell = `<div style="display:flex;flex-direction:column;gap:5px;min-width:200px">
-        <div style="display:flex;gap:4px;justify-content:flex-start;flex-wrap:wrap">
-          <button class="ghost" style="padding:5px 8px;font-size:11px;background:#e7f7ee;color:var(--ok)" onclick="setAttendance('${escapeHtml(s.seat)}','present')">حاضر</button>
-          <button class="ghost" style="padding:5px 8px;font-size:11px;background:#fff4e0;color:var(--warn)" onclick="setAttendance('${escapeHtml(s.seat)}','late')">متأخر</button>
-          <button class="ghost" style="padding:5px 8px;font-size:11px;background:#fdecec;color:var(--bad)" onclick="setAttendance('${escapeHtml(s.seat)}','absent')">غائب</button>
-        </div>
-        <input id="attNote" placeholder="ملاحظة (اختياري)" value="${escapeHtml(att&&att.note||'')}" style="padding:6px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12px;text-align:right">
-      </div>`;
-    } else {
-      const badge = att ? `<div style="font-size:11px;color:var(--muted);margin-top:2px">${attLbl[att.status]}${att.note?' • '+escapeHtml(att.note):''}</div>` : '';
-      nameCell = `<span style="cursor:pointer;color:var(--teal-d);font-weight:700;font-size:15px;line-height:1.6;text-decoration:underline" onclick="openAttMenu('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span>${badge}`;
-    }
+    // الاسم: يبقى ظاهراً دائماً (أزرق)، والنقر عليه يفتح نافذة الحضور في وسط الشاشة
+    const badge = att ? `<span style="font-size:11px;color:var(--muted);font-weight:500"> — ${attLbl[att.status]}${att.note?' • '+escapeHtml(att.note):''}</span>` : '';
+    let nameCell = `<span style="cursor:pointer;color:#1f5fb0;font-weight:700;font-size:15px;line-height:1.6;text-decoration:underline" onclick="openAttMenu('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span>${badge}`;
     html += `<tr style="${rowBg}">
       <td><input type="checkbox" ${chk} style="width:18px;height:18px" onchange="toggleSelStudent('${escapeHtml(s.seat)}',this.checked)"></td>
       <td>${i+1}</td>
@@ -1842,13 +1836,51 @@ function renderStudents(){
   host.innerHTML=html+'</tbody></table></div>';
   updateBulkBar();
 }
-// قائمة الحضور عند الضغط على رقم الهوية
-function openAttMenu(seat){ state.attMenuSeat = (state.attMenuSeat===seat?null:seat); renderStudents(); }
+// الحالة الفعلية للطالب اليوم: اللحظية إن وُجدت، وإلا المحفوظة بتاريخ اليوم (تبقى حتى يوم جديد)
+function effectiveAtt(s){
+  const live = state.attendance[s.seat];
+  if(live) return live;
+  const wl = state.workLog[s.classCode] && state.workLog[s.classCode][s.seat];
+  if(wl && wl.events){
+    const ev = wl.events.find(e=>e.date===todayStr());
+    if(ev) return { status:ev.status, note:ev.note||'', ts:ev.ts, saved:true };
+  }
+  return null;
+}
+// نافذة الحضور في وسط الشاشة (تظهر الحالات الثلاث كاملة دون تمرير)
+function openAttMenu(seat){
+  const s = findStudent(seat); if(!s) return;
+  const att = effectiveAtt(s);
+  const body = document.getElementById('attBody');
+  const btn = (status,label,bg,col)=>`<button class="ghost" style="padding:14px 8px;font-size:15px;font-weight:800;background:${bg};color:${col};border:2px solid ${col};border-radius:12px;flex:1" onclick="setAttendance('${escapeHtml(seat)}','${status}')">${label}</button>`;
+  body.innerHTML = `
+    <div style="text-align:center;font-weight:800;font-size:17px;margin-bottom:2px">${escapeHtml(s.name)}</div>
+    <div style="text-align:center;font-size:12px;color:var(--muted);margin-bottom:14px">رقم الهوية: ${escapeHtml(seat)}${att?` · الحالة الحالية: ${attLbl[att.status]}`:''}</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      ${btn('excused','مستأذن','#e7f7ee','#1a7a4f')}
+      ${btn('late','متأخر','#fff4e0','#b97400')}
+      ${btn('absent','غائب','#fdecec','#c0392b')}
+    </div>
+    <input id="attNote" placeholder="ملاحظة (اختياري)" value="${escapeHtml(att&&att.note||'')}" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:9px;font:inherit;text-align:right;margin-bottom:10px">
+    <button class="ghost" style="width:100%;padding:10px;color:var(--ok);border-color:var(--ok);margin-bottom:6px" onclick="setAttendance('${escapeHtml(seat)}','present')">↩️ تعيين «حاضر» (إزالة الحالة)</button>
+    <button class="ghost" style="width:100%;padding:10px" onclick="closeAttMenu()">إغلاق</button>`;
+  document.getElementById('attOverlay').style.display='block';
+}
+function closeAttMenu(){ const o=document.getElementById('attOverlay'); if(o) o.style.display='none'; }
 function setAttendance(seat,status){
   const noteEl = document.getElementById('attNote');
   const note = noteEl ? (noteEl.value||'').trim() : '';
-  state.attendance[seat] = { status, note, ts: Date.now() };
-  state.attMenuSeat = null;
+  if(status==='present'){
+    // إزالة الحالة المحفوظة لليوم (رجوع إلى الافتراضي حاضر)
+    delete state.attendance[seat];
+    const s = findStudent(seat);
+    if(s){ const wl = state.workLog[s.classCode] && state.workLog[s.classCode][seat];
+      if(wl && wl.events){ const i=wl.events.findIndex(e=>e.date===todayStr()); if(i>=0){ wl.events.splice(i,1); saveWorkLogToCloud(); } }
+    }
+  } else {
+    state.attendance[seat] = { status, note, ts: Date.now() };
+  }
+  closeAttMenu();
   renderStudents();
 }
 
@@ -1873,16 +1905,18 @@ function commitAttendance(){
   let nAbs=0, nLate=0, nPres=0;
   list.forEach(s=>{
     const att = state.attendance[s.seat];
-    const status = att ? att.status : 'present';        // غير المحدَّد = حاضر
-    const note = att ? (att.note||'') : '';
     const entry = workEntry(s.classCode, s.seat);
-    // الحفظ بنفس التاريخ = تعديل القيمة لا إضافة سجل جديد (فلا يتضاعف العدّ)
     const existing = entry.events.find(e=>e.date===date);
+    // الأولوية: اختيار لحظي جديد، وإلا أبقِ المحفوظ اليوم كما هو، وإلا حاضر افتراضياً
+    let status, note;
+    if(att){ status = att.status; note = att.note||''; }
+    else if(existing){ status = existing.status; note = existing.note||''; }   // لا يُعاد إلى حاضر
+    else { status = 'present'; note = ''; }
     if(existing){ existing.status=status; existing.note=note; existing.ts=ts; }
     else entry.events.push({ date, ts, status, note });
     if(status==='absent') nAbs++; else if(status==='late') nLate++; else nPres++;
   });
-  // تصفير الحالة اللحظية لطلاب هذا العرض بعد الحفظ
+  // تصفير الاختيارات اللحظية فقط (الحالة المحفوظة تبقى ملوّنة من سجل اليوم)
   list.forEach(s=>{ delete state.attendance[s.seat]; });
   renderStudents();
   renderWorkLog();
@@ -1890,9 +1924,9 @@ function commitAttendance(){
   alert(`تم التسجيل في سجل الأعمال بتاريخ ${date}:\nحاضر ${toArabic(nPres)} · متأخر ${toArabic(nLate)} · غائب ${toArabic(nAbs)}`);
 }
 
-// تصفير الحالة اللحظية بعد ٩٠ دقيقة
+// تصفير الاختيار اللحظي غير المحفوظ بعد ١٥ ساعة (المحفوظ يبقى ملوّناً من سجل اليوم)
 function purgeStaleAttendance(){
-  const now = Date.now(), MAX = 90*60*1000;
+  const now = Date.now(), MAX = 15*60*60*1000;
   let changed=false;
   for(const seat in state.attendance){
     if(now - (state.attendance[seat].ts||0) > MAX){ delete state.attendance[seat]; changed=true; }
@@ -1935,8 +1969,8 @@ function renderWorkLog(){
   if(!studs.length){ host.innerHTML='<div class="empty">لا يوجد طلاب في هذا الصف.</div>'; return; }
   const log = state.workLog[code]||{};
   const cfg = state.workCfg;
-  // رؤوس عمودين: الفترة (صف علوي) + البنود (صف سفلي)
-  let head1 = '<th rowspan="2">رقم الهوية</th><th rowspan="2">اسم الطالب</th>';
+  // رؤوس عمودين موحّدة مع التصدير: م + اسم الطالب + (لكل فترة: غياب + بنود + مجمّعات + مجموع)
+  let head1 = '<th rowspan="2">م</th><th rowspan="2">اسم الطالب</th>';
   let head2 = '';
   cfg.periods.forEach(p=>{
     const vis = p.items.filter(it=>!it.hidden);
@@ -1947,14 +1981,12 @@ function renderWorkLog(){
     (p.groups||[]).forEach(g=>{ head2 += `<th style="font-size:10px;background:#efe3e8">${escapeHtml(g.name)}<br><span style="color:var(--muted)">(${toArabic(groupMax(p,g))})</span></th>`; });
     head2 += `<th style="font-size:10px;background:#0b7a63">مجموع الفترة<br><span style="opacity:.85">(${toArabic(periodTotal(p))})</span></th>`;
   });
-  head1 += '<th rowspan="2">ملاحظات</th>';
   let html='<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="min-width:900px"><thead><tr>'+head1+'</tr><tr>'+head2+'</tr></thead><tbody>';
-  studs.forEach(s=>{
+  studs.forEach((s,idx)=>{
     const e = log[s.seat] || { events:[], attempts:{} };
-    const lastNotes = (e.events||[]).filter(x=>x.note).slice(-1).map(x=>x.note).join(' / ');
     let cells = `
-      <td style="font-weight:700"><span style="cursor:pointer;color:var(--teal-d);text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span></td>
-      <td style="text-align:right"><span style="cursor:pointer;color:var(--teal-d);font-weight:600;text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span></td>`;
+      <td style="color:#888">${toArabic(idx+1)}</td>
+      <td style="text-align:right"><span style="cursor:pointer;color:#1f5fb0;font-weight:600;text-decoration:underline" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.name)}</span></td>`;
     cfg.periods.forEach(p=>{
       const absD = absenceDays(e);
       cells += `<td style="color:${absD?'var(--bad)':'inherit'};font-weight:700">${toArabic(absD)}</td>`;
@@ -1968,7 +2000,6 @@ function renderWorkLog(){
       const ps = periodSum(e,p);
       cells += `<td style="background:#eef6f4;font-weight:800;color:var(--teal-d)">${ps!=null?toArabic(ps):'—'}</td>`;
     });
-    cells += `<td style="font-size:11px;color:var(--muted);text-align:right">${escapeHtml(lastNotes||'—')}</td>`;
     html += `<tr>${cells}</tr>`;
   });
   host.innerHTML = html+'</tbody></table></div>';
@@ -2015,6 +2046,8 @@ function addAttemptAll(seat, itemId){
   if(!item) return;
   const val = parseFloat(document.getElementById('newAttemptAll').value);
   if(isNaN(val)){ alert('أدخل درجة صحيحة لإضافتها للجميع.'); return; }
+  if(val < 0){ alert('الدرجة لا يمكن أن تكون أقل من صفر.'); return; }
+  if(val > item.max){ alert(`لا يمكن إدخال درجة أكبر من الموزونة (${toArabic(item.max)}) لهذا البند.`); return; }
   const ratio = Math.max(0, Math.min(1, val/(item.max||1)));
   const classmates = state.students.filter(x=>x.classCode===s.classCode);
   if(!classmates.length){ alert('لا يوجد طلاب في هذا الصف.'); return; }
@@ -2035,6 +2068,8 @@ function addAttempt(seat, itemId){
   if(!item) return;
   const val = parseFloat(document.getElementById('newAttempt').value);
   if(isNaN(val)){ alert('أدخل درجة صحيحة.'); return; }
+  if(val < 0){ alert('الدرجة لا يمكن أن تكون أقل من صفر.'); return; }
+  if(val > item.max){ alert(`لا يمكن إدخال درجة أكبر من الموزونة (${toArabic(item.max)}) لهذا البند.`); return; }
   const entry = workEntry(s.classCode, s.seat);
   if(!entry.attempts[itemId]) entry.attempts[itemId]=[];
   entry.attempts[itemId].push(Math.max(0, Math.min(1, val/(item.max||1))));
@@ -2099,8 +2134,8 @@ function renderWlHeader(){
   const host = document.getElementById('wlHeaderHost'); if(!host) return;
   const h = state.workCfg.header;
   const fld = (label,key)=>`<label class="field" style="margin-bottom:8px">${label}
-    <input value="${escapeHtml(h[key]||'')}" onchange="setWlHeader('${key}',this.value)"></label>`;
-  host.innerHTML = `<p class="hint" style="margin-top:0">تُحفظ هذه البيانات وتظهر ثابتة في رأس تقرير السجل. (المملكة العربية السعودية ووزارة التعليم ثابتتان دائماً.)</p>
+    <input id="wlh_${key}" value="${escapeHtml(h[key]||'')}" onchange="setWlHeader('${key}',this.value)"></label>`;
+  host.innerHTML = `<p class="hint" style="margin-top:0">تُحفظ هذه البيانات وتظهر ثابتة في رأس تقرير السجل، وتبقى محفوظة دائماً حتى تغيّرها. (المملكة العربية السعودية ووزارة التعليم ثابتتان دائماً.)</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
       ${fld('إدارة التعليم','edu')}
       ${fld('اسم المدرسة','school')}
@@ -2112,7 +2147,15 @@ function renderWlHeader(){
     <button class="ghost" style="margin-top:12px;width:100%" onclick="saveWlHeader()">💾 حفظ الترويسة</button>`;
 }
 function setWlHeader(k,v){ state.workCfg.header[k]=v; }
-function saveWlHeader(){ saveStudentsToCloud(); alert('تم حفظ ترويسة السجل.'); }
+function saveWlHeader(){
+  // اقرأ القيم مباشرة من الحقول (لضمان عدم فقد آخر تعديل قبل الحفظ)
+  ['edu','school','teacher','year','term','principal'].forEach(k=>{
+    const el = document.getElementById('wlh_'+k);
+    if(el) state.workCfg.header[k] = (el.value||'').trim();
+  });
+  saveStudentsToCloud();
+  alert('تم حفظ الترويسة ✅ (ستبقى محفوظة دائماً حتى تغيّرها.)');
+}
 
 // ---- خيارات التصدير (اللون / الفترة) ----
 let exportMode = 'full';
@@ -2135,6 +2178,13 @@ function openExportDialog(mode){
       <select id="exPeriod" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:12px">
         ${state.workCfg.periods.map((p,i)=>`<option value="${i}">${escapeHtml(p.name)}</option>`).join('')}
       </select>`;
+  } else {
+    // التصدير الكامل: كامل السجل أو فترة واحدة
+    periodPick = `<p class="hint" style="margin:0 0 6px">نطاق التصدير:</p>
+      <select id="exScope" style="width:100%;padding:9px;border:1px solid var(--line);border-radius:8px;font:inherit;margin-bottom:12px">
+        <option value="all">السجل كامل (كل الفترات)</option>
+        ${state.workCfg.periods.map((p,i)=>`<option value="${i}">${escapeHtml(p.name)} فقط</option>`).join('')}
+      </select>`;
   }
   const colorBtns = Object.keys(PALETTES).map(k=>`<button class="ghost" style="padding:10px;border:2px solid ${PALETTES[k].plain?'#999':PALETTES[k].head};color:${PALETTES[k].plain?'#333':PALETTES[k].head};font-weight:700" onclick="runExport('${code}','${k}')">${PALETTES[k].name}</button>`).join('');
   body.innerHTML = periodPick
@@ -2145,11 +2195,12 @@ function openExportDialog(mode){
 function closeExportDialog(){ document.getElementById('exportOverlay').style.display='none'; }
 function runExport(code, colorKey){
   const pal = PALETTES[colorKey] || PALETTES.red;
-  let periodIdx = null;
-  if(exportMode==='detailed'){ const sel=document.getElementById('exPeriod'); periodIdx = sel?+sel.value:0; }
   closeExportDialog();
-  if(exportMode==='detailed') openDetailedExport(code, periodIdx, pal);
-  else openWorkLogExport(code, pal);
+  if(exportMode==='detailed'){ const sel=document.getElementById('exPeriod'); openDetailedExport(code, sel?+sel.value:0, pal); }
+  else {
+    const sc=document.getElementById('exScope'); const scope = sc?sc.value:'all';
+    openWorkLogExport(code, pal, scope);
+  }
 }
 
 // شعار وزارة التعليم كـSVG مضمّن (نفس نمط بطاقات الإجابة)
@@ -2159,18 +2210,20 @@ function moeLogoInline(w){
 }
 
 // ---- التصدير الكامل (شكل النموذج الرسمي) ----
-function openWorkLogExport(code, pal){
+function openWorkLogExport(code, pal, scope){
   pal = pal || PALETTES.red;
   const cfg = state.workCfg, h = cfg.header;
   const studs = state.students.filter(s=>s.classCode===code);
   if(!studs.length){ alert('لا يوجد طلاب في هذا الصف.'); return; }
   const log = state.workLog[code]||{};
   const className = classNameByCode(code)||'';
+  // نطاق الفترات: كامل أو فترة واحدة
+  let periods = cfg.periods, single=false;
+  if(scope!=null && scope!=='all'){ const i=+scope; if(cfg.periods[i]){ periods=[cfg.periods[i]]; single=true; } }
   const win = window.open('', '_blank');
   if(!win){ alert('فضلاً اسمح بالنوافذ المنبثقة للتصدير.'); return; }
-  // رؤوس البنود (بنود ظاهرة + مجمّعات + مجموع) لكل فترة، مع عمود أيام الغياب
-  let head1='', head2='';
-  cfg.periods.forEach(p=>{
+  let head1='<th rowspan="2" class="num">م</th><th rowspan="2" class="nm">اسم الطالب</th>', head2='';
+  periods.forEach(p=>{
     const vis=p.items.filter(it=>!it.hidden);
     const span = 1 + vis.length + (p.groups?p.groups.length:0) + 1;
     head1 += `<th colspan="${span}" class="pr">${escapeHtml(p.name)}</th>`;
@@ -2183,7 +2236,7 @@ function openWorkLogExport(code, pal){
   studs.forEach((s,idx)=>{
     const e = log[s.seat]||{events:[],attempts:{}};
     let tds = `<td class="num">${toArabic(idx+1)}</td><td class="nm" contenteditable>${escapeHtml(s.name)}</td>`;
-    cfg.periods.forEach(p=>{
+    periods.forEach(p=>{
       tds += `<td>${toArabic(absenceDays(e))}</td>`;
       p.items.filter(it=>!it.hidden).forEach(it=>{ const v=itemValue(e,it); tds += `<td contenteditable>${v!=null?toArabic(v):''}</td>`; });
       (p.groups||[]).forEach(g=>{ const gv=groupValue(e,p,g); tds += `<td class="grp">${gv!=null?toArabic(gv):''}</td>`; });
@@ -2192,7 +2245,9 @@ function openWorkLogExport(code, pal){
     rows += `<tr>${tds}</tr>`;
   });
   const logo = moeLogoInline(150);
-  win.document.write(buildExportHTML({ title:`سجل أعمال السنة — ${className}`, pal, logo, h, className, head1, head2, rows, landscape:true }));
+  const title = single ? `سجل أعمال السنة (${periods[0].name}) — ${className}` : `سجل أعمال السنة — ${className}`;
+  // فترة واحدة (أضيق) → عمودي؛ كامل (أعرض) → أفقي
+  win.document.write(buildExportHTML({ title, pal, logo, h, className, head1, head2, rows, landscape:!single, subtitle: single?periods[0].name:'' }));
   win.document.close();
 }
 
@@ -2240,29 +2295,31 @@ function buildExportHTML(o){
   return `<!doctype html><html dir="rtl" lang="ar"><head><meta charset="utf-8">
   <title>${escapeHtml(o.title)}</title>
   <style>
-    @page{ size:A4 landscape; margin:6mm; }
+    @page{ size:A4 ${o.landscape?'landscape':'portrait'}; margin:6mm; }
     *{box-sizing:border-box}
     body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#222;margin:0;padding:10px}
-    .sheet{width:100%;max-width:1000px;margin:0 auto}
+    .sheet{width:100%;max-width:${o.landscape?'1000px':'720px'};margin:0 auto}
     .bar{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${pal.line};padding-bottom:8px;margin-bottom:8px}
     .right{font-size:12px;line-height:1.7;text-align:right}
     .center{text-align:center}
-    .center h1{margin:4px 0 0;font-size:20px;color:${pal.plain?'#000':pal.head}}
+    .center h1{margin:4px 0 0;font-size:18px;color:${pal.plain?'#000':pal.head}}
     .center .sub{font-size:12px;color:#666}
-    .left{font-size:12px;line-height:1.9;text-align:right;min-width:240px}
+    .left{font-size:11px;line-height:1.8;text-align:right;min-width:220px}
     .left .row{display:flex;gap:6px}
     .left .lbl{color:${pal.plain?'#000':pal.head};font-weight:700;min-width:84px}
     .left .val{flex:1;border-bottom:1px dotted #aaa;min-height:16px}
-    table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:10px;margin-top:6px}
-    th,td{border:1px solid ${pal.line};padding:2px;text-align:center;overflow:hidden;word-wrap:break-word}
+    table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:${o.landscape?'10px':'9px'};margin-top:6px}
+    thead{display:table-header-group}
+    tbody tr{page-break-inside:avoid}
+    th,td{border:1px solid ${pal.line};padding:${o.landscape?'2px':'1.5px'};text-align:center;overflow:hidden;word-wrap:break-word;line-height:1.25}
     th{background:${pal.soft};color:${pal.plain?'#000':pal.head}}
     th.pr{background:${headBg};color:${headTx};font-size:11px}
     th.it{font-size:8.5px;font-weight:600}
     th.tot,td.tot{background:${pal.soft2};font-weight:800}
     th.grp,td.grp{background:${pal.grp};color:${pal.grpTx};font-weight:700}
     .mx{display:inline-block;margin-top:1px;background:#fff;color:${pal.plain?'#000':pal.head};border:1px solid ${pal.line};border-radius:50%;padding:0 4px;font-size:8px}
-    td.nm{text-align:right;font-weight:600;width:15%;font-size:9px}
-    td.num{width:3%;color:#888}
+    td.nm{text-align:right;font-weight:600;width:${o.landscape?'15%':'22%'};font-size:9px}
+    td.num{width:4%;color:#888}
     td[contenteditable]:focus{outline:2px solid ${pal.line};background:#fffef7}
     .toolbar{position:sticky;top:0;background:#fff;padding:8px 0;margin-bottom:6px;display:flex;gap:8px;border-bottom:1px solid #eee;flex-wrap:wrap}
     .toolbar button{padding:9px 16px;border:none;border-radius:8px;font:inherit;font-weight:700;cursor:pointer;background:${pal.plain?'#444':pal.head};color:#fff}
@@ -2271,7 +2328,7 @@ function buildExportHTML(o){
   </style></head><body>
   <div class="toolbar">
     <button onclick="window.print()">🖨️ تصدير / طباعة PDF</button>
-    <span class="hint">للحصول على أفضل عرض: من نافذة الطباعة اختر الاتجاه «أفقي / Landscape» ومقاس A4. الجدول مضبوط ليظهر كاملاً في عرض الورقة دون تقطيع.</span>
+    <span class="hint">من نافذة الطباعة اختر الاتجاه «${o.landscape?'أفقي / Landscape':'عمودي / Portrait'}» ومقاس A4. الجدول مضبوط ليملأ الورقة دون تقطيع، ويتوزّع تلقائياً على عدّة صفحات عند الحاجة مع تكرار الرأس.</span>
   </div>
   <div class="sheet">
   <div class="bar">
@@ -2313,7 +2370,7 @@ function openStudentRecord(seat){
     <div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:6px">رقم الهوية: ${escapeHtml(seat)} · الصف: ${escapeHtml(classNameByCode(s.classCode)||'—')}</div>
     ${section('🔴 الغيابات','var(--bad)', byStatus('absent'))}
     ${section('🟠 التأخّرات','var(--warn)', byStatus('late'))}
-    ${section('🟢 الحضور','var(--ok)', byStatus('present'))}
+    ${section('🟢 الاستئذان','var(--ok)', byStatus('excused'))}
     ${examsHtml}`;
   document.getElementById('stRecordOverlay').style.display='block';
 }
@@ -3395,7 +3452,7 @@ const firebaseConfig = {
   messagingSenderId: "157418234040",
   appId: "1:157418234040:web:0027f85eddae38ac45544d"
 };
-let db = null, cloudReady = false;
+let db = null, cloudReady = false, rosterLoaded = false;
 state.exams = [];
 state.savedRecords = [];   // (قديم) سجلات النتائج المجمّعة
 // سجل الأعمال: مرتبط برمز الصف
@@ -3772,6 +3829,7 @@ async function loadResultsFromCloud(manual){
 /* ---- الطلاب ---- (تُحفظ ضمن مجموعة exams بمعرّف مستقل students، تفادياً لمجموعات جديدة) */
 async function saveStudentsToCloud(manual){
   if(!cloudReady){ if(manual) alert('قاعدة البيانات غير مهيّأة.'); return; }
+  if(!rosterLoaded && !manual) return;   // لا تحفظ قبل اكتمال التحميل الأول (حتى لا تُمسح الترويسة)
   try{
     await cloudSet('exams', 'roster', { students: state.students, classes: state.classes, workCfg: state.workCfg });
     if(manual) setCloudStatus('ok', `✅ حُفظ ${toArabic(state.students.length)} طالب و${toArabic(state.classes.length)} صفّاً سحابياً.`);
@@ -3783,13 +3841,20 @@ async function loadStudentsFromCloud(manual){
     let data = await cloudGet('exams', 'roster');
     if(data && (data.students||data.classes)){
       state.students = data.students||[]; state.classes = data.classes||[];
-      if(data.workCfg && data.workCfg.periods) state.workCfg = data.workCfg;
+      if(data.workCfg && data.workCfg.periods){
+        // ادمج الترويسة المحفوظة فوق الافتراضية (فلا يُفقد أي حقل)
+        const defH = defaultWorkCfg().header;
+        data.workCfg.header = Object.assign({}, defH, data.workCfg.header||{});
+        state.workCfg = data.workCfg;
+      }
     } else {
-      // توافق مع الإصدار القديم (قائمة طلاب فقط)
       const old = await cloudGet('exams', 'students');
       if(Array.isArray(old)) state.students = old;
     }
+    rosterLoaded = true;
     refreshClassDropdowns(); renderClasses(); renderStudents();
+    if(typeof renderWlHeader==='function') renderWlHeader();
+    if(typeof renderWlSetup==='function') renderWlSetup();
     if(manual) setCloudStatus('ok', `✅ حُمّل ${toArabic(state.students.length)} طالب و${toArabic(state.classes.length)} صفّاً.`);
   }catch(e){ if(manual) alert('فشل التحميل: '+e.message); }
 }
