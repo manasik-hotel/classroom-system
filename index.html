@@ -1585,36 +1585,85 @@ function upsertStudent(st){
 let pendingImport = null;   // { groups:[{className, students:[{seat,name}], code:''}] }
 
 // اختيار ملف PDF من نور
+// تحميل Tesseract.js عند الحاجة فقط (للملفات التي يتعذّر استخراج نصّها)
+function ensureTesseract(){
+  if(window.Tesseract) return Promise.resolve(window.Tesseract);
+  return new Promise((res,rej)=>{
+    const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js';
+    s.onload=()=>res(window.Tesseract);
+    s.onerror=()=>rej(new Error('تعذّر تحميل محرّك القراءة الضوئية'));
+    document.head.appendChild(s);
+  });
+}
+// شريط حالة الاستيراد
+function showImportProgress(msg){
+  let el=document.getElementById('importProgress');
+  if(!el){
+    el=document.createElement('div'); el.id='importProgress';
+    el.style.cssText='position:fixed;inset:0;background:rgba(15,30,28,.6);z-index:10000;display:flex;align-items:center;justify-content:center;padding:20px';
+    el.innerHTML='<div style="background:#fff;border-radius:16px;padding:24px;max-width:340px;text-align:center"><div class="spin" style="width:42px;height:42px;border:4px solid #e0eeeb;border-top-color:#0b7a63;border-radius:50%;margin:0 auto 14px;animation:spin 1s linear infinite"></div><div id="importProgressMsg" style="font-weight:700;color:var(--teal-d)"></div></div>';
+    document.body.appendChild(el);
+    if(!document.getElementById('spinKeyframes')){ const st=document.createElement('style'); st.id='spinKeyframes'; st.textContent='@keyframes spin{to{transform:rotate(360deg)}}'; document.head.appendChild(st); }
+  }
+  el.style.display='flex';
+  document.getElementById('importProgressMsg').textContent=msg;
+}
+function hideImportProgress(){ const el=document.getElementById('importProgress'); if(el) el.style.display='none'; }
+
+// استيراد PDF من نور: مسار نصّي سريع، وإلا قراءة ضوئية (OCR)
 function onPdfRosterChosen(ev){
   const file = ev.target.files && ev.target.files[0];
   ev.target.value='';
   if(!file) return;
+  showImportProgress('جارٍ قراءة الملف…');
   ensurePdfJs().then(async (pdfjsLib)=>{
     try{
       const buf = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      // 1) محاولة الاستخراج النصّي
       let fullText = '';
-      let headerClass='', headerSection='';
       for(let p=1;p<=pdf.numPages;p++){
         const page = await pdf.getPage(p);
         const tc = await page.getTextContent();
-        // إعادة بناء الأسطر حسب الإحداثي الرأسي (y)
-        const lines = groupTextByLines(tc.items);
-        lines.forEach(line=>{ fullText += line + '\n'; });
+        groupTextByLines(tc.items).forEach(line=>{ fullText += line + '\n'; });
       }
-      const parsed = parseNoorRoster(fullText);
+      // هل النص عربي سليم؟ (يحوي حروفاً في نطاق العربية)
+      const arabicCount = (fullText.match(/[\u0600-\u06FF]/g)||[]).length;
+      let parsed;
+      if(arabicCount > 20){
+        parsed = parseNoorRoster(fullText);          // مسار سريع
+      } else {
+        // 2) النص مكسور → قراءة ضوئية للصفحات
+        const Tesseract = await ensureTesseract();
+        showImportProgress('جارٍ تجهيز محرّك القراءة الضوئية…');
+        const worker = await Tesseract.createWorker(['ara','eng']);
+        let ocrText='';
+        for(let p=1;p<=pdf.numPages;p++){
+          showImportProgress(`قراءة ضوئية للصفحة ${toArabic(p)} من ${toArabic(pdf.numPages)}…`);
+          const page = await pdf.getPage(p);
+          const vp = page.getViewport({ scale: 2.4 });
+          const canvas = document.createElement('canvas');
+          canvas.width = vp.width; canvas.height = vp.height;
+          await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+          const { data } = await worker.recognize(canvas);
+          ocrText += data.text + '\n';
+        }
+        await worker.terminate();
+        parsed = parseNoorRoster(ocrText);
+      }
+      hideImportProgress();
       if(!parsed.students.length){
-        alert('لم يُعثر على أسماء طلاب في الملف. تأكّد أنه «كشف بأسماء الطلاب» من نور (PDF نصّي وليس صورة ممسوحة).');
+        alert('لم يُعثر على بيانات طلاب. تأكّد أنه «كشف بأسماء الطلاب» من نور.');
         return;
       }
-      // اسم الصف من الترويسة (دمج الصف + الفصل)
       let className = parsed.className || '';
       if(parsed.section) className = (className? className+' - ' : '') + parsed.section;
       if(!className) className = 'صف مستورد';
       pendingImport = { groups:[{ className, students: parsed.students, code:'' }] };
       openImportReview();
-    }catch(err){ alert('تعذّرت قراءة ملف PDF: '+err.message); }
-  }).catch(()=> alert('تعذّر تحميل قارئ PDF. تأكّد من الإنترنت وأعد المحاولة.'));
+    }catch(err){ hideImportProgress(); alert('تعذّرت قراءة ملف PDF: '+err.message); }
+  }).catch(()=>{ hideImportProgress(); alert('تعذّر تحميل قارئ PDF. تأكّد من الإنترنت وأعد المحاولة.'); });
 }
 
 // تجميع عناصر النص في أسطر حسب الإحداثي y (لقراءة الجدول صحيحاً)
@@ -1649,16 +1698,20 @@ function parseNoorRoster(text){
   const seen = {};
   for(const ln of lines){
     // ابحث عن رقم سجل مدني (9-11 رقم) في السطر
-    const idMatch = ln.match(/\b([0-9٠-٩]{9,11})\b/);
+    const idMatch = ln.match(/([0-9٠-٩]{9,11})/);
     if(!idMatch) continue;
     const seat = normalizeDigits(idMatch[1]);
-    if(seat.length<9) continue;
+    if(seat.length<9 || seat.length>11) continue;
     // الاسم = باقي السطر بعد إزالة الأرقام (التسلسل + الهوية)
     let rest = ln.replace(idMatch[0],' ');
-    // أزل رقم التسلسل المفرد (1-3 خانات) في الطرفين
-    rest = rest.replace(/(^|\s)[0-9٠-٩]{1,3}(\s|$)/g,' ');
+    // أزل أي أرقام متبقية (تسلسل/تواريخ)
+    rest = rest.replace(/[0-9٠-٩]+/g,' ');
+    // أبقِ الحروف العربية والمسافات فقط
+    rest = rest.replace(/[^\u0600-\u06FF\s]/g,' ');
     const name = cleanCell(rest);
-    if(!name || name.length<3) continue;
+    if(!name || name.replace(/\s/g,'').length<4) continue;   // اسم قصير جداً = ضوضاء
+    // تجاهل أسطر الترويسة (تحوي كلمات مفتاحية)
+    if(/المدرسة|المعلم|الصف|الفصل|القسم|النظام|الإدارة|وزارة|المملكة|كشف|ReportID/.test(name)) continue;
     if(seen[seat]) continue; seen[seat]=1;
     students.push({ seat, name });
   }
@@ -1680,9 +1733,13 @@ function openImportReview(){
         <input id="impCode${gi}" inputmode="numeric" value="${escapeHtml(g.code||'')}" placeholder="مثال: 106" oninput="setImportCode(${gi},this.value)">
       </label>
       <div class="hint" style="background:#eef6f4;padding:8px;border-radius:8px">مثال توضيحي: «${escapeHtml(g.className)}» ← رمز الصف <b>١٠٦</b>. (يُستخدم لتعريف الفصل وتجميع طلابه.)</div>
-      <details style="margin-top:8px"><summary style="cursor:pointer;color:var(--teal-d);font-size:13px">عرض الأسماء المكتشفة (${toArabic(g.students.length)})</summary>
-        <div style="max-height:180px;overflow-y:auto;margin-top:6px;font-size:12px">
-        ${g.students.map((s,i)=>`<div style="display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #eef2f1"><span style="color:var(--muted)">${toArabic(i+1)}</span><span style="font-weight:700">${escapeHtml(s.seat)}</span><span>${escapeHtml(s.name)}</span></div>`).join('')}
+      <details style="margin-top:8px" open><summary style="cursor:pointer;color:var(--teal-d);font-size:13px">مراجعة الأسماء والهويات (${toArabic(g.students.length)}) — يمكنك تعديل أي اسم</summary>
+        <div style="max-height:240px;overflow-y:auto;margin-top:6px;font-size:12px">
+        ${g.students.map((s,i)=>`<div style="display:flex;gap:6px;align-items:center;padding:3px 0;border-bottom:1px solid #eef2f1">
+          <span style="color:var(--muted);min-width:22px">${toArabic(i+1)}</span>
+          <span style="font-weight:700;min-width:90px;direction:ltr">${escapeHtml(s.seat)}</span>
+          <input value="${escapeHtml(s.name)}" oninput="setImportName(${gi},${i},this.value)" style="flex:1;padding:5px 8px;border:1px solid var(--line);border-radius:6px;font:inherit;font-size:12px">
+        </div>`).join('')}
         </div>
       </details>
     </div>`;
@@ -1691,6 +1748,7 @@ function openImportReview(){
   document.getElementById('importReviewOverlay').style.display='block';
 }
 function setImportCode(gi, val){ pendingImport.groups[gi].code = normalizeDigits(val).trim(); }
+function setImportName(gi, si, val){ pendingImport.groups[gi].students[si].name = val; }
 function closeImportReview(){ document.getElementById('importReviewOverlay').style.display='none'; pendingImport=null; }
 
 // تأكيد الاستيراد: إنشاء الفصول وإضافة الطلاب
