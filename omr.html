@@ -321,9 +321,11 @@
           <span id="selCount" style="font-weight:700;color:var(--teal-d)">٠ محدّد</span>
           <div class="row" style="margin-top:8px">
             <button class="ghost" onclick="bulkMove()">↔️ نقل الطلاب</button>
+            <span id="bulkNoteBtns">
             <button class="ghost" onclick="bulkNote('مرشد')">📨 ملاحظة للمرشد</button>
             <button class="ghost" onclick="bulkNote('وكيل')">📨 ملاحظة للوكيل</button>
             <button class="ghost" onclick="bulkNote('custom')">📝 كتابة ملاحظة</button>
+            </span>
           </div>
         </div>
         <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد.</div></div>
@@ -1809,6 +1811,8 @@ function updateBulkBar(){
   if(bar) bar.style.display = sel.length? 'block':'none';
   const sc=document.getElementById('selCount');
   if(sc) sc.textContent = `${toArabic(sel.length)} محدّد`;
+  const nb=document.getElementById('bulkNoteBtns');
+  if(nb) nb.style.display = (typeof CLS_TEACHER_ADD!=='undefined' && CLS_TEACHER_ADD===false)?'none':'';
 }
 function bulkMove(){
   if(!clsGuardEdit()) return;
@@ -1824,11 +1828,86 @@ function bulkMove(){
   renderClasses(); renderStudents(); saveStudentsToCloud();
   alert('تم نقل الطلاب إلى الصف المحدّد.');
 }
-function bulkNote(kind){
+let _omrNoteCtx=null;
+function omrModal(html){
+  closeOmrModal();
+  const ov=document.createElement('div'); ov.id='omrModalOv';
+  ov.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick=(e)=>{ if(e.target===ov) closeOmrModal(); };
+  const box=document.createElement('div');
+  box.style.cssText='background:#fff;width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:88vh;overflow:auto;box-shadow:0 -8px 30px rgba(0,0,0,.22)';
+  box.innerHTML=html; ov.appendChild(box); document.body.appendChild(ov);
+}
+function closeOmrModal(){ const o=document.getElementById('omrModalOv'); if(o) o.remove(); }
+async function omrStudentNoteCount(seat){
+  try{
+    const snap=await db.collection('notes').where('studentSeat','==',String(seat)).get();
+    return snap.docs.map(d=>d.data()).filter(n=>n.schoolId===CLS_SESSION.schoolId && n.period===CLS_SESSION.period).length;
+  }catch(e){ return 0; }
+}
+async function bulkNote(kind){
   const sel=selectedSeats(); if(!sel.length) return;
-  const target = kind==='مرشد'?'المرشد الطلابي' : kind==='وكيل'?'الوكيل' : 'ملاحظة';
-  // ميزة الإرسال تُبرمج لاحقاً — حالياً تأكيد فقط
-  alert(`سيتم إرسال ملاحظة بخصوص ${toArabic(sel.length)} طالب إلى «${target}».\n(هذه الميزة قيد التطوير وستُفعّل لاحقاً.)`);
+  const studs=sel.map(seat=>state.students.find(s=>s.seat===seat)).filter(Boolean);
+  if(!studs.length) return;
+  if(!CLS_SESSION || !CLS_SESSION.schoolId){ alert('لا يمكن إرسال الملاحظات: حسابك غير مرتبط بمدرسة.'); return; }
+  const roles = kind==='مرشد'?['counselor'] : kind==='وكيل'?['agent'] : ['counselor','agent'];
+  omrModal('<div style="text-align:center;color:#888;padding:26px">جارٍ التحميل…</div>');
+  let cands=[];
+  try{
+    const snap=await db.collection('users').where('schoolId','==',CLS_SESSION.schoolId).get();
+    cands=snap.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.active!==false && roles.includes(u.role));
+  }catch(e){}
+  const normN=x=>String(x||'').replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).trim();
+  const codes=[...new Set(studs.map(s=>normN(s.classCode)))];
+  const hasClass=u=>(u.assignedClasses||[]).map(normN).some(c=>codes.includes(c));
+  const preferred=cands.filter(hasClass);
+  const recips = preferred.length?preferred:cands;
+  const counts={};
+  await Promise.all(studs.map(async s=>{ counts[s.seat]=await omrStudentNoteCount(s.seat); }));
+  const roleLabel = kind==='مرشد'?'المرشد الطلابي':kind==='وكيل'?'الوكيل':'المرشد / الوكيل';
+  const studList = studs.map(s=>'<div style="display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid #eee;font-size:13px"><span>'+escapeHtml(s.name)+'</span><span style="color:#999;white-space:nowrap">📨 سبق '+toArabic(counts[s.seat]||0)+'</span></div>').join('');
+  const recOptions = recips.map(u=>'<option value="'+escapeHtml(u.id)+'">'+escapeHtml(u.username)+' ('+(u.role==='counselor'?'موجه طلابي':'وكيل')+')</option>').join('');
+  const noRec = !recips.length;
+  omrModal(
+    '<div style="width:42px;height:4px;border-radius:9px;background:#ddd;margin:0 auto 14px"></div>'+
+    '<h3 style="margin:0 0 4px">إرسال ملاحظة إلى '+roleLabel+'</h3>'+
+    '<div style="color:#888;font-size:13px;margin-bottom:10px">عن '+toArabic(studs.length)+' طالب — العدد بجانب كل طالب هو ما سبق إرساله عنه</div>'+
+    '<div style="background:#f6f8f8;border:1px solid #e5eaea;border-radius:10px;padding:6px 10px;margin-bottom:12px">'+studList+'</div>'+
+    (noRec
+      ? '<div style="background:#fdecec;color:#c0392b;border-radius:10px;padding:12px;font-size:13.5px">لا يوجد '+roleLabel+' مُسنَد لهذا الفصل. يرجى إبلاغ الإدارة لإسناد مستخدم.</div>'
+      : '<label style="font-weight:700;font-size:14px;display:block;margin-bottom:6px">المستلِم</label>'+
+        '<select id="omrNoteRecip" style="width:100%;padding:11px;border:1px solid var(--line,#d7dede);border-radius:10px;font:inherit;text-align:right;margin-bottom:12px;background:#fff">'+recOptions+'</select>'+
+        '<label style="font-weight:700;font-size:14px;display:block;margin-bottom:6px">نص الملاحظة</label>'+
+        '<textarea id="omrNoteText" rows="4" style="width:100%;padding:11px;border:1px solid var(--line,#d7dede);border-radius:10px;font:inherit;text-align:right" placeholder="اكتب الملاحظة…"></textarea>')+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<button class="ghost" style="flex:1;padding:11px" onclick="closeOmrModal()">إلغاء</button>'+
+      (noRec?'':'<button style="flex:2;padding:11px;background:var(--teal,#0f766e);color:#fff;border:none;border-radius:10px;font:inherit;font-weight:700" onclick="sendOmrNotes()">📨 إرسال</button>')+
+    '</div>'
+  );
+  _omrNoteCtx={ studs };
+}
+async function sendOmrNotes(){
+  if(!_omrNoteCtx) return;
+  const rid=(document.getElementById('omrNoteRecip')||{}).value;
+  const txt=((document.getElementById('omrNoteText')||{}).value||'').trim();
+  if(!rid){ alert('اختر المستلِم.'); return; }
+  if(!txt){ alert('اكتب نص الملاحظة.'); return; }
+  let info;
+  try{ const us=await db.collection('users').doc(rid).get(); const u=us.data(); info=[{userId:rid,name:u.username,role:u.role}]; }
+  catch(e){ alert('تعذّر تحديد المستلِم.'); return; }
+  try{
+    for(const s of _omrNoteCtx.studs){
+      await db.collection('notes').add({ schoolId:CLS_SESSION.schoolId, period:CLS_SESSION.period,
+        fromUserId:CLS_SESSION.userId, fromName:CLS_SESSION.username, fromRole:CLS_SESSION.role,
+        recipients:[rid], recipientsInfo:info, scope:'student',
+        studentSeat:String(s.seat), studentName:s.name,
+        classCode:String(s.classCode||''), className:classNameByCode(s.classCode)||'',
+        text:txt, createdAt:Date.now(), replies:[], readBy:[] });
+    }
+    closeOmrModal();
+    state.selectedStudents={}; renderStudents();
+    alert('تم إرسال الملاحظة بنجاح.');
+  }catch(e){ alert('تعذّر الإرسال: '+(e.message||e)); }
 }
 // خرائط حالات الحضور (عامة ليستخدمها العرض والنافذة معاً)
 const ATT_BG = { excused:'#e7f7ee', late:'#fff4e0', absent:'#fdecec' };   // مستأذن أخضر · متأخر أصفر · غائب أحمر (حاضر = أبيض)

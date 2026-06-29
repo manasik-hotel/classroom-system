@@ -80,6 +80,7 @@ input,select{font-family:inherit;font-size:15px}
   color:var(--muted);background:transparent;transition:.15s;
 }
 .tab.active{background:var(--brand);color:#fff;font-weight:700}
+.tab-dot{align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;margin-right:6px;border-radius:9px;background:var(--danger);color:#fff;font-size:11px;font-weight:700;display:inline-flex}
 .content{padding:16px;max-width:760px;margin:0 auto;padding-bottom:60px}
 
 /* ===== Cards & lists ===== */
@@ -427,12 +428,14 @@ function enterApp(){
   const bar=$('#tabbar'); bar.innerHTML='';
   tabs.forEach(t=>{
     const b=document.createElement('button'); b.className='tab'; b.textContent=t.label;
+    if(t.key==='received'){ const bd=document.createElement('span'); bd.id='rcvBadge'; bd.className='tab-dot'; bd.style.display='none'; b.appendChild(bd); }
     b.onclick=()=>{ activeTab=t.key; renderTabs(); renderPanel(); };
     bar.appendChild(b);
   });
   if(!tabs.find(t=>t.key===activeTab)) activeTab = tabs.length?tabs[0].key:null;
   renderTabs(); renderPanel();
   watchActive();
+  if(typeof refreshUnread==='function') refreshUnread();
 }
 let _activeUnsub=null;
 function watchActive(){
@@ -818,11 +821,12 @@ function groupStages(){
   stages.sort((a,b)=> rank(a)-rank(b) || a.name.localeCompare(b.name,'ar'));
   return stages;
 }
-function studentRowR(s,canDel){
-  return '<div style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-top:1px solid var(--line)">'+
-    '<span style="font-family:monospace;color:var(--muted);font-size:12.5px;min-width:96px">'+esc(s.seat||'—')+'</span>'+
+function studentRowR(s,canDel,canEdit){
+  return '<div style="display:flex;gap:6px;align-items:center;padding:7px 4px;border-top:1px solid var(--line)">'+
+    '<span style="font-family:monospace;color:var(--muted);font-size:12.5px;min-width:90px">'+esc(s.seat||'—')+'</span>'+
     '<span style="flex:1;font-size:14px">'+esc(s.name)+'</span>'+
-    (canDel?'<button class="icon-btn del" onclick="delStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')">✕</button>':'')+
+    (canEdit?'<button class="icon-btn" onclick="moveStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')" title="نقل">↔️</button>':'')+
+    (canDel?'<button class="icon-btn del" onclick="delStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')" title="حذف">✕</button>':'')+
   '</div>';
 }
 function renderStagesHtml(canDel,canEdit){
@@ -843,7 +847,7 @@ function renderStagesHtml(canDel,canEdit){
             '<div class="uinfo"><div class="uname">'+esc(cl.name)+'</div><div class="umeta">رمز: '+esc(cl.code)+' · '+studs.length+' طالب</div></div>'+
             (canDel?'<button class="icon-btn del" onclick="event.stopPropagation();delClass(\''+esc(cl.code)+'\')">🗑</button>':'')+
             '<span style="color:var(--muted);font-size:17px">'+(co?'▴':'▾')+'</span></div>'+
-          (co?('<div style="margin-top:8px">'+(studs.length?studs.map(s=>studentRowR(s,canDel)).join(''):'<div class="empty" style="padding:12px">لا طلاب في هذا الفصل.</div>')+'</div>'):'')+
+          (co?('<div style="margin-top:8px">'+(studs.length?studs.map(s=>studentRowR(s,canDel,canEdit)).join(''):'<div class="empty" style="padding:12px">لا طلاب في هذا الفصل.</div>')+'</div>'):'')+
         '</div>';
       }).join('')+'</div>';
     }
@@ -912,8 +916,20 @@ async function delClass(code){
   },true);
 }
 async function delStudent(seat,code){
-  RStudents=RStudents.filter(s=>!(s.seat===seat&&s.classCode===code));
-  await saveRoster(); paintClasses(); toast('تم حذف الطالب');
+  const st=RStudents.find(s=>s.seat===seat&&s.classCode===code);
+  confirmModal('حذف طالب','سيُحذف «'+(st?st.name:'')+'» من روستر المدرسة نهائياً. متابعة؟',async()=>{
+    RStudents=RStudents.filter(s=>!(s.seat===seat&&s.classCode===code));
+    await saveRoster(); paintClasses(); toast('تم حذف الطالب');
+  },true);
+}
+function moveStudent(seat,fromCode){
+  const st=RStudents.find(s=>s.seat===seat&&s.classCode===fromCode); if(!st) return;
+  const opts=RClasses.filter(c=>String(c.code)!==String(fromCode)).map(c=>'<option value="'+esc(c.code)+'">'+esc(c.name)+' ('+esc(c.code)+')</option>').join('');
+  if(!opts){ toast('لا يوجد فصل آخر للنقل إليه'); return; }
+  modal('<h2>نقل طالب بين الفصول</h2><p style="color:var(--muted);margin:0 0 12px"><b>'+esc(st.name)+'</b> — '+esc(st.seat||'')+'</p>'+
+    '<div class="field"><label>نقل إلى الفصل</label><select id="mvCls">'+opts+'</select></div>'+
+    '<div class="modal-row"><button class="btn secondary" onclick="closeModal()">إلغاء</button><button class="btn" id="mvBtn">نقل</button></div>');
+  $('#mvBtn').onclick=async()=>{ const to=$('#mvCls').value; if(!to)return; if(RStudents.some(x=>x.seat===seat&&String(x.classCode)===String(to))){ toast('الطالب موجود في الفصل الهدف'); return; } st.classCode=to; await saveRoster(); closeModal(); paintClasses(); toast('تم نقل الطالب'); };
 }
 function onSchoolXlsx(ev){
   const file=ev.target.files&&ev.target.files[0]; ev.target.value='';
@@ -1056,27 +1072,46 @@ async function resolveRecipients(opts){
   else if(opts.kind==='toPeers'){ const other=opts.fromRole==='agent'?'counselor':'agent'; recs=users.filter(u=>u.role===other); }
   return recs.map(u=>({userId:u.id,name:u.username,role:u.role}));
 }
+let unreadNotes=0;
+async function studentNoteCount(seat){
+  try{ const snap=await notesCol().where('studentSeat','==',String(seat)).get();
+    return snap.docs.map(d=>d.data()).filter(n=>n.schoolId===CURRENT.schoolId && n.period===SESSION.period).length;
+  }catch(e){ return 0; }
+}
 async function createNote(n){
-  const info=await resolveRecipients(n);
+  let info;
+  if(n.recipientId){
+    const us=await usersCol().doc(n.recipientId).get();
+    if(!us.exists) throw new Error('المستقبِل غير موجود.');
+    const u=us.data(); info=[{userId:n.recipientId,name:u.username,role:u.role}];
+  } else { info=await resolveRecipients(n); }
   if(!info.length) throw new Error('لا يوجد مستقبِل مؤهّل لهذه الملاحظة.');
   await notesCol().add({ schoolId:CURRENT.schoolId, period:SESSION.period,
     fromUserId:CURRENT.id, fromName:CURRENT.username, fromRole:CURRENT.role,
     recipients:info.map(r=>r.userId), recipientsInfo:info,
     scope:n.scope, studentSeat:n.studentSeat||'', studentName:n.studentName||'',
     classCode:n.classCode||'', className:n.className||'', text:n.text,
-    createdAt:Date.now(), replies:[] });
+    createdAt:Date.now(), replies:[], readBy:[] });
 }
 function noteCard(n, mineSent){
+  const unread = !mineSent && !((n.readBy||[]).includes(CURRENT.id));
   const who = mineSent
     ? ('إلى: '+(n.recipientsInfo||[]).map(r=>esc(r.name)+' ('+(ROLES[r.role]||r.role)+')').join('، '))
     : ('من: '+esc(n.fromName)+' ('+(ROLES[n.fromRole]||n.fromRole)+')');
   const stu = (n.studentName||n.studentSeat) ? '<div class="umeta">بخصوص: '+esc(n.studentName||'')+(n.className?(' · '+esc(n.className)):'')+'</div>' : '';
   const reps=(n.replies||[]).map(r=>'<div style="border-top:1px solid var(--line);padding:6px 0;font-size:13px"><b>'+esc(r.fromName)+':</b> '+esc(r.text)+'</div>').join('');
-  return '<div class="card"><div class="uinfo"><div class="uname" style="font-size:14px">'+who+'</div>'+stu+
+  const repliedByOther=(n.replies||[]).some(r=>r.fromUserId!==CURRENT.id);
+  const canReply = mineSent ? repliedByOther : true;
+  const replyBtn = canReply
+    ? '<button class="btn ghost" style="margin-top:6px" onclick="replyNote(\''+n.id+'\')">↩︎ رد</button>'
+    : (mineSent? '<div class="umeta" style="margin-top:6px">⏳ بانتظار رد المستلم قبل أن تتمكّن من الرد</div>':'');
+  return '<div class="card"'+(unread?' style="border-color:var(--accent);background:#EFFAF8"':'')+'><div class="uinfo">'+
+    (unread?'<span class="pill" style="background:var(--accent);color:#fff;margin-bottom:6px;display:inline-block">🔔 جديدة</span> ':'')+
+    '<div class="uname" style="font-size:14px">'+who+'</div>'+stu+
     '<div style="margin:8px 0;font-size:14.5px;white-space:pre-wrap">'+esc(n.text)+'</div>'+
     '<div class="umeta">'+new Date(n.createdAt).toLocaleString('ar')+'</div>'+
     (reps?'<div style="margin-top:8px">'+reps+'</div>':'')+
-    '<button class="btn ghost" style="margin-top:6px" onclick="replyNote(\''+n.id+'\')">↩︎ رد</button></div></div>';
+    replyBtn+'</div></div>';
 }
 async function replyNote(id){
   if(!can('index.received','edit') && !can('index.sent','edit')){ toast('ليس لديك صلاحية الرد (مشاهدة فقط).'); return; }
@@ -1098,31 +1133,54 @@ async function renderSent(c){
   }catch(e){ $('#notesList').innerHTML='<div class="alert err">'+esc(e.message)+'</div>'; }
 }
 async function renderReceived(c){
-  c.innerHTML='<div class="panel-head"><h2>الملاحظات الواردة</h2></div><div id="notesList"><div class="empty"><span class="spin"></span></div></div>';
+  c.innerHTML='<div class="panel-head"><h2>🔔 الملاحظات الواردة</h2></div><div id="notesList"><div class="empty"><span class="spin"></span></div></div>';
   try{
     const snap=await notesCol().where('recipients','array-contains',CURRENT.id).get();
     let arr=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>n.period===SESSION.period).sort((a,b)=>b.createdAt-a.createdAt);
     $('#notesList').innerHTML = arr.length? arr.map(n=>noteCard(n,false)).join('') : '<div class="empty"><span class="e-emoji">📥</span>لا ملاحظات واردة.</div>';
+    const unreadIds=arr.filter(n=>!((n.readBy||[]).includes(CURRENT.id))).map(n=>n.id);
+    if(unreadIds.length){
+      for(const id of unreadIds){ try{ await notesCol().doc(id).update({ readBy: firebase.firestore.FieldValue.arrayUnion(CURRENT.id) }); }catch(e){} }
+      refreshUnread();
+    }
   }catch(e){ $('#notesList').innerHTML='<div class="alert err">'+esc(e.message)+'</div>'; }
 }
-let composeRoster={classes:[],students:[]};
+async function refreshUnread(){
+  try{
+    const snap=await notesCol().where('recipients','array-contains',CURRENT.id).get();
+    unreadNotes=snap.docs.map(d=>d.data()).filter(n=>n.period===SESSION.period && !((n.readBy||[]).includes(CURRENT.id))).length;
+  }catch(e){ unreadNotes=0; }
+  const bd=$('#rcvBadge'); if(bd){ bd.textContent=unreadNotes; bd.style.display=unreadNotes>0?'inline-flex':'none'; }
+}
+let composeRoster={classes:[],students:[]}, composePeers=[];
 async function openCompose(){
   try{ const s=await rosterDoc(CURRENT.schoolId).get(); const d=s.exists?JSON.parse(s.data().value||'{}'):{}; composeRoster={classes:d.classes||[],students:d.students||[]}; }
   catch(e){ composeRoster={classes:[],students:[]}; }
-  const peerLabel = CURRENT.role==='agent' ? 'الموجّهين الطلابيين' : 'الوكلاء';
+  composePeers=[];
+  try{
+    const us=await usersCol().where('schoolId','==',CURRENT.schoolId).get();
+    const other=CURRENT.role==='agent'?'counselor':'agent';
+    composePeers=us.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.active!==false&&u.role===other).map(u=>({id:u.id,name:u.username}));
+  }catch(e){}
+  const peerLabel = CURRENT.role==='agent' ? 'موجّه طلابي' : 'وكيل';
+  const peerOpts = composePeers.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
   modal('<h2>ملاحظة جديدة</h2><div id="cmpAlert"></div>'+
     '<div class="field"><label>نوع الملاحظة</label><select id="cmpKind">'+
       '<option value="toTeacher">عن طالب → إلى معلّمه</option>'+
-      '<option value="toPeers">عامة → إلى '+esc(peerLabel)+'</option></select></div>'+
+      '<option value="toPeers">إلى '+esc(peerLabel)+' محدّد</option></select></div>'+
     '<div id="cmpStudentWrap">'+
       '<div class="field"><label>الفصل</label><select id="cmpClass"><option value="">— اختر —</option>'+composeRoster.classes.map(c=>'<option value="'+esc(c.code)+'">'+esc(c.name)+'</option>').join('')+'</select></div>'+
-      '<div class="field"><label>الطالب</label><select id="cmpStudent"><option value="">— اختر الفصل أولاً —</option></select></div></div>'+
+      '<div class="field"><label>الطالب</label><select id="cmpStudent"><option value="">— اختر الفصل أولاً —</option></select></div>'+
+      '<div id="cmpCount" class="sub-note" style="margin:0 0 10px"></div></div>'+
+    '<div id="cmpPeerWrap" style="display:none"><div class="field"><label>إلى</label><select id="cmpPeer"><option value="">— اختر —</option>'+peerOpts+'</select></div></div>'+
     '<div class="field"><label>نص الملاحظة</label><textarea id="cmpText" rows="4" style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface-2);font-family:inherit"></textarea></div>'+
     '<div class="modal-row"><button class="btn secondary" onclick="closeModal()">إلغاء</button><button class="btn" id="cmpSend">إرسال</button></div>');
-  const upd=()=>{ $('#cmpStudentWrap').style.display = $('#cmpKind').value==='toTeacher'?'block':'none'; };
+  const upd=()=>{ const k=$('#cmpKind').value; $('#cmpStudentWrap').style.display=k==='toTeacher'?'block':'none'; $('#cmpPeerWrap').style.display=k==='toPeers'?'block':'none'; };
   $('#cmpKind').onchange=upd; upd();
   $('#cmpClass').onchange=()=>{ const code=$('#cmpClass').value; const studs=composeRoster.students.filter(s=>String(s.classCode)===String(code));
-    $('#cmpStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+esc(s.seat)+'">'+esc(s.name)+'</option>').join(''); };
+    $('#cmpStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+esc(s.seat)+'">'+esc(s.name)+'</option>').join(''); const cc=$('#cmpCount'); if(cc) cc.textContent=''; };
+  $('#cmpStudent').onchange=async()=>{ const seat=$('#cmpStudent').value; const cc=$('#cmpCount'); if(!cc) return; if(!seat){ cc.textContent=''; return; }
+    cc.textContent='⏳ …'; const n=await studentNoteCount(seat); cc.innerHTML='📊 عدد الملاحظات المرسلة عن هذا الطالب من جميع المستخدمين: <b>'+n+'</b>'; };
   $('#cmpSend').onclick=doCompose;
 }
 async function doCompose(){
@@ -1135,6 +1193,9 @@ async function doCompose(){
     const cl=composeRoster.classes.find(c=>String(c.code)===String(code))||{};
     const st=composeRoster.students.find(s=>String(s.seat)===String(seat)&&String(s.classCode)===String(code))||{};
     payload.classCode=code; payload.className=cl.name||''; payload.studentSeat=seat; payload.studentName=st.name||'';
+  } else {
+    const pid=$('#cmpPeer').value; if(!pid){ alertBox('cmpAlert','err','اختر المستقبِل'); return; }
+    payload.recipientId=pid;
   }
   try{ await createNote(payload); closeModal(); toast('تم الإرسال'); renderSent($('#content')); }
   catch(e){ alertBox('cmpAlert','err',e.message); }
