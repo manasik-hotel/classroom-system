@@ -69,6 +69,7 @@ input,select{font-family:inherit;font-size:15px}
 .topbar .tb-title{font-weight:800;font-size:16px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tb-badge{background:rgba(255,255,255,.14);padding:4px 10px;border-radius:20px;font-size:12px;font-weight:500;white-space:nowrap}
 .tb-menu-btn{background:rgba(255,255,255,.14);color:#fff;width:38px;height:38px;border-radius:11px;font-size:17px;display:flex;align-items:center;justify-content:center}
+.tb-icon{background:rgba(255,255,255,.14);color:#fff;width:36px;height:36px;border-radius:11px;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 .tabbar{
   position:sticky;top:62px;z-index:20;background:var(--surface);border-bottom:1px solid var(--line);
   display:flex;gap:4px;padding:8px 10px;overflow-x:auto;scrollbar-width:none;
@@ -193,7 +194,9 @@ input,select{font-family:inherit;font-size:15px}
   <div class="topbar">
     <div class="tb-title" id="tbTitle">نظام الفصول</div>
     <span class="tb-badge" id="tbPeriod"></span>
-    <button class="tb-menu-btn" id="tbMenu" title="القائمة">☰</button>
+    <button class="tb-icon" id="tbOmr" title="صفحة التصحيح">📝</button>
+    <button class="tb-icon" id="tbPw" title="تغيير كلمة المرور">🔑</button>
+    <button class="tb-icon" id="tbOut" title="تسجيل الخروج">⏻</button>
   </div>
   <div class="tabbar" id="tabbar"></div>
   <div class="content" id="content"></div>
@@ -418,6 +421,8 @@ function enterApp(){
   const school = CURRENT.schoolId && SCHOOLS[CURRENT.schoolId] ? SCHOOLS[CURRENT.schoolId].name : 'لوحة الأدمن';
   $('#tbTitle').textContent = school;
   $('#tbPeriod').textContent = periodLabel(SESSION.period);
+  const _omrKeys=['omr.classes','omr.design','omr.grade','omr.results','omr.worklog'];
+  const _ob=$('#tbOmr'); if(_ob) _ob.style.display=(CURRENT.role==='admin'||_omrKeys.some(k=>can(k,'access')))?'flex':'none';
   const tabs=visibleTabs();
   const bar=$('#tabbar'); bar.innerHTML='';
   tabs.forEach(t=>{
@@ -443,7 +448,9 @@ function watchActive(){
 function renderTabs(){
   [...$('#tabbar').children].forEach((b,i)=> b.classList.toggle('active', visibleTabs()[i] && visibleTabs()[i].key===activeTab));
 }
-$('#tbMenu').onclick = openMenu;
+$('#tbOmr').onclick = ()=>{ window.location.href='omr.html'; };
+$('#tbPw').onclick  = ()=>{ openChangePw(false); };
+$('#tbOut').onclick = ()=>{ logout(); };
 function openMenu(){
   const school = CURRENT.schoolId && SCHOOLS[CURRENT.schoolId] ? SCHOOLS[CURRENT.schoolId].name : 'كل المدارس';
   const omrKeys=['omr.classes','omr.design','omr.grade','omr.results','omr.worklog'];
@@ -719,7 +726,7 @@ function confirmModal(title,msg,onYes,danger,withInput){
 /* ========================================================================
    تبويب الفصول والطلاب — روستر المدرسة العام
    ======================================================================== */
-let RClasses=[], RStudents=[], RSchoolId=null, pendingGroups=null, RTeacherAdd=true;
+let RClasses=[], RStudents=[], RSchoolId=null, pendingGroups=null, RTeacherAdd=true, RUI={ed:{},openStage:null,openClass:null};
 function can(k,f){ if(CURRENT.role==='admin') return true; const p=(CURRENT.permissions||{})[k]; return !!(p&&p[f]); }
 const rosterDoc = sid => db.collection('schoolData').doc('roster_'+sid);
 
@@ -737,6 +744,8 @@ async function loadRoster(){
     RClasses=Array.isArray(d.classes)?d.classes:[]; RStudents=Array.isArray(d.students)?d.students:[];
     RTeacherAdd = (d.teacherAdd!==false);
   }catch(e){ RClasses=[];RStudents=[]; }
+  const hasC=RClasses.length>0;
+  RUI={ ed:{teacherAdd:!hasC, noor:!hasC, manual:!hasC, paste:!hasC}, openStage:null, openClass:null };
   paintClasses();
 }
 async function saveRoster(){
@@ -751,61 +760,103 @@ function paintClasses(){
       sids.map(([id,s])=>'<option value="'+esc(id)+'"'+(id===RSchoolId?' selected':'')+'>'+esc(s.name)+'</option>').join('')+'</select></div></div>';
   }
   html += '<div class="sub-note">روستر المدرسة العام'+(canEdit?' — يمكنك الاستيراد والتعديل.':' — عرض فقط.')+'</div>';
-  if(canEdit){
-    html += '<div class="card"><div class="set-block"><h3>إضافة الطلاب للمعلمين</h3>'+
-      '<p>عند الإيقاف، لا يستطيع المعلمون إضافة الطلاب (يدوي / نور / لصق) في صفحة التصحيح.</p></div>'+
-      '<div class="chip-toggle"><button type="button" class="chip '+(RTeacherAdd?'active':'')+'" id="rTaOn">مُفعّل</button>'+
-      '<button type="button" class="chip '+(!RTeacherAdd?'active':'')+'" id="rTaOff">مُوقف</button></div></div>';
-  }
-  if(canEdit) html += importBlockHtml();
-  if(!RClasses.length){
-    html += '<div class="empty"><span class="e-emoji">📚</span>لا توجد فصول بعد'+(canEdit?'. استورد من نور أو أضف فصلاً.':'.')+'</div>';
-  } else {
-    html += RClasses.map(cl=>{
-      const studs=RStudents.filter(s=>s.classCode===cl.code);
-      return '<div class="card"><div class="urow" style="cursor:pointer" onclick="toggleClass(\''+esc(cl.code)+'\')">'+
-        '<div class="uavatar">📘</div><div class="uinfo"><div class="uname">'+esc(cl.name)+'</div>'+
-        '<div class="umeta">رمز: '+esc(cl.code)+' · '+studs.length+' طالب</div></div>'+
-        (canDel?'<button class="icon-btn del" onclick="event.stopPropagation();delClass(\''+esc(cl.code)+'\')">🗑</button>':'')+
-        '<span id="rcar-'+esc(cl.code)+'" style="color:var(--muted)">▾</span></div>'+
-        '<div id="rcl-'+esc(cl.code)+'" style="display:none;margin-top:8px">'+
-        (studs.length? studs.map(s=>
-          '<div style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-top:1px solid var(--line)">'+
-          '<span style="font-family:monospace;color:var(--muted);font-size:12.5px;min-width:96px">'+esc(s.seat||'—')+'</span>'+
-          '<span style="flex:1;font-size:14px">'+esc(s.name)+'</span>'+
-          (canDel?'<button class="icon-btn del" onclick="delStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')">✕</button>':'')+
-          '</div>').join('') : '<div class="empty" style="padding:14px">لا طلاب في هذا الفصل.</div>')+
-        '</div></div>';
-    }).join('');
-  }
+  if(canEdit) html += editorCardsHtml();
+  html += renderStagesHtml(canDel,canEdit);
   $('#rRoot').innerHTML=html;
   const sel=$('#rSchool'); if(sel) sel.onchange=()=>{ RSchoolId=sel.value; loadRoster(); };
   if(canEdit) wireImport();
 }
-function toggleClass(code){
-  const b=document.getElementById('rcl-'+code), a=document.getElementById('rcar-'+code);
-  if(!b) return; const open=b.style.display!=='none';
-  b.style.display=open?'none':'block'; if(a) a.textContent=open?'▾':'▴';
-}
-function importBlockHtml(){
-  const opts=RClasses.map(c=>'<option value="'+esc(c.code)+'">'+esc(c.name)+' ('+esc(c.code)+')</option>').join('');
-  return '<div class="card">'+
-    '<div class="set-block"><h3>استيراد من نور</h3><p>نور ← التقارير ← تقارير أخرى ← كشف بأسماء الطلاب ← تصدير الأسماء بالصف (Excel).</p></div>'+
-    '<input id="rXlsx" type="file" accept=".xlsx,.xls,.csv" style="display:none">'+
-    '<button class="btn sm" id="rXlsxBtn">📂 اختيار ملف Excel من نور</button>'+
-    '<div id="rImpReview"></div>'+
-    '<div class="divider"></div>'+
-    '<div class="set-block"><h3>إضافة فصل يدوياً</h3></div>'+
-    '<div class="field"><label>اسم الفصل</label><input id="rClName" placeholder="مثال: الأول الثانوي 8"></div>'+
-    '<div class="field"><label>رمز الفصل</label><input id="rClCode" placeholder="مثال: 108"></div>'+
-    '<button class="btn secondary sm" id="rAddCl">+ إضافة فصل</button>'+
-    '<div class="divider"></div>'+
-    '<div class="set-block"><h3>لصق طلاب لفصل</h3><p>كل سطر: رقم الهوية ثم الاسم.</p></div>'+
-    '<div class="field"><label>الفصل</label><select id="rPasteCl"><option value="">— اختر —</option>'+opts+'</select></div>'+
-    '<textarea id="rPaste" rows="4" style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface-2);font-family:inherit" placeholder="1012345678  محمد أحمد"></textarea>'+
-    '<button class="btn secondary sm" id="rPasteBtn" style="margin-top:8px">⬆️ استيراد النص الملصق</button>'+
+function edCard(key,title,bodyHtml){
+  const open=!!RUI.ed[key];
+  return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px">'+
+    '<div class="urow" style="cursor:pointer;padding:13px 14px" onclick="toggleEd(\''+key+'\')">'+
+      '<div class="uinfo"><div class="uname" style="font-size:15px">'+title+'</div></div>'+
+      '<span style="color:var(--muted);font-size:18px">'+(open?'▴':'▾')+'</span></div>'+
+    (open?'<div style="padding:0 14px 14px">'+bodyHtml+'</div>':'')+
   '</div>';
 }
+function editorCardsHtml(){
+  const opts=RClasses.map(c=>'<option value="'+esc(c.code)+'">'+esc(c.name)+' ('+esc(c.code)+')</option>').join('');
+  const taBody='<p class="sub-note" style="margin:0 0 10px">عند الإيقاف، لا يستطيع المعلمون إضافة الطلاب (يدوي / نور / لصق) في صفحة التصحيح.</p>'+
+    '<div class="chip-toggle"><button type="button" class="chip '+(RTeacherAdd?'active':'')+'" id="rTaOn">مُفعّل</button>'+
+    '<button type="button" class="chip '+(!RTeacherAdd?'active':'')+'" id="rTaOff">مُوقف</button></div>';
+  const noorBody='<p class="sub-note" style="margin:0 0 10px">نور ← التقارير ← تقارير أخرى ← كشف بأسماء الطلاب ← تصدير الأسماء بالصف (Excel).</p>'+
+    '<input id="rXlsx" type="file" accept=".xlsx,.xls,.csv" style="display:none">'+
+    '<button class="btn sm" id="rXlsxBtn">📂 اختيار ملف Excel من نور</button><div id="rImpReview"></div>';
+  const manBody='<div class="field"><label>اسم الفصل</label><input id="rClName" placeholder="مثال: الأول الثانوي 8"></div>'+
+    '<div class="field"><label>رمز الفصل</label><input id="rClCode" placeholder="مثال: 108"></div>'+
+    '<button class="btn secondary sm" id="rAddCl">+ إضافة فصل</button>';
+  const pasteBody='<p class="sub-note" style="margin:0 0 8px">كل سطر: رقم الهوية ثم الاسم.</p>'+
+    '<div class="field"><label>الفصل</label><select id="rPasteCl"><option value="">— اختر —</option>'+opts+'</select></div>'+
+    '<textarea id="rPaste" rows="4" style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface-2);font-family:inherit" placeholder="1012345678  محمد أحمد"></textarea>'+
+    '<button class="btn secondary sm" id="rPasteBtn" style="margin-top:8px">⬆️ استيراد النص الملصق</button>';
+  return edCard('teacherAdd','إضافة الطلاب للمعلمين',taBody)+
+         edCard('noor','استيراد من نور',noorBody)+
+         edCard('manual','إضافة فصل يدوياً',manBody)+
+         edCard('paste','لصق طلاب لفصل',pasteBody);
+}
+function toggleEd(key){ RUI.ed[key]=!RUI.ed[key]; paintClasses(); }
+function toggleStage(key){ RUI.openStage=(RUI.openStage===key?null:key); RUI.openClass=null; paintClasses(); }
+function toggleClassR(code){ RUI.openClass=(RUI.openClass===code?null:code); paintClasses(); }
+function gradeStage(name){ return String(name||'').replace(/[\s\-_،,]*[0-9\u0660-\u0669]+\s*$/,'').trim() || 'صفوف'; }
+function stageColor(name,code){
+  const c=String(code||''), n=String(name||'');
+  if(/أول|اول/.test(n)||c[0]==='1') return {bg:'#FFF4E8',bd:'#FBD9AE',fg:'#B96608',ic:'#E5821A'};
+  if(/ثاني/.test(n)||c[0]==='2') return {bg:'#E9F1FD',bd:'#C5DAF6',fg:'#1E5AAA',ic:'#2E73CC'};
+  if(/ثالث/.test(n)||c[0]==='3') return {bg:'#E7F6EE',bd:'#BFE6CF',fg:'#197A44',ic:'#1F9D55'};
+  return {bg:'#F1ECFB',bd:'#DACFF3',fg:'#5A39A6',ic:'#7C56D6'};
+}
+function groupStages(){
+  const norm=x=>normalizeDigits(String(x||''));
+  const map={};
+  RClasses.forEach(c=>{ const st=gradeStage(c.name); (map[st]=map[st]||[]).push(c); });
+  const stages=Object.keys(map).map(st=>{
+    const cls=map[st].slice().sort((a,b)=>norm(a.code).localeCompare(norm(b.code),undefined,{numeric:true}));
+    return {name:st, classes:cls, code:cls[0]?cls[0].code:''};
+  });
+  const rank=s2=>({'1':1,'2':2,'3':3})[norm(s2.code)[0]]||9;
+  stages.sort((a,b)=> rank(a)-rank(b) || a.name.localeCompare(b.name,'ar'));
+  return stages;
+}
+function studentRowR(s,canDel){
+  return '<div style="display:flex;gap:8px;align-items:center;padding:7px 4px;border-top:1px solid var(--line)">'+
+    '<span style="font-family:monospace;color:var(--muted);font-size:12.5px;min-width:96px">'+esc(s.seat||'—')+'</span>'+
+    '<span style="flex:1;font-size:14px">'+esc(s.name)+'</span>'+
+    (canDel?'<button class="icon-btn del" onclick="delStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')">✕</button>':'')+
+  '</div>';
+}
+function renderStagesHtml(canDel,canEdit){
+  const stages=groupStages();
+  if(!stages.length) return '<div class="empty"><span class="e-emoji">📚</span>لا توجد فصول بعد'+(canEdit?'. استورد من نور أو أضف فصلاً.':'.')+'</div>';
+  return stages.map(stg=>{
+    const col=stageColor(stg.name,stg.code);
+    const open=RUI.openStage===stg.name;
+    const count=stg.classes.reduce((a,c)=>a+RStudents.filter(s=>s.classCode===c.code).length,0);
+    let body='';
+    if(open){
+      body='<div style="padding:10px 12px 12px">'+stg.classes.map(cl=>{
+        const studs=RStudents.filter(s=>s.classCode===cl.code);
+        const co=RUI.openClass===cl.code;
+        return '<div class="card" style="margin:0 0 8px;box-shadow:none">'+
+          '<div class="urow" style="cursor:pointer" onclick="toggleClassR(\''+esc(cl.code)+'\')">'+
+            '<div class="uavatar" style="background:'+col.bg+';color:'+col.ic+';border-color:'+col.bd+'">📘</div>'+
+            '<div class="uinfo"><div class="uname">'+esc(cl.name)+'</div><div class="umeta">رمز: '+esc(cl.code)+' · '+studs.length+' طالب</div></div>'+
+            (canDel?'<button class="icon-btn del" onclick="event.stopPropagation();delClass(\''+esc(cl.code)+'\')">🗑</button>':'')+
+            '<span style="color:var(--muted);font-size:17px">'+(co?'▴':'▾')+'</span></div>'+
+          (co?('<div style="margin-top:8px">'+(studs.length?studs.map(s=>studentRowR(s,canDel)).join(''):'<div class="empty" style="padding:12px">لا طلاب في هذا الفصل.</div>')+'</div>'):'')+
+        '</div>';
+      }).join('')+'</div>';
+    }
+    return '<div class="card" style="padding:0;overflow:hidden;margin-bottom:10px;border-color:'+col.bd+'">'+
+      '<div class="urow" style="cursor:pointer;padding:14px;background:'+col.bg+'" onclick="toggleStage(\''+esc(stg.name)+'\')">'+
+        '<div class="uavatar" style="background:'+col.ic+';color:#fff;border:none">🎓</div>'+
+        '<div class="uinfo"><div class="uname" style="color:'+col.fg+'">'+esc(stg.name)+'</div><div class="umeta">'+stg.classes.length+' فصل · '+count+' طالب</div></div>'+
+        '<span style="color:'+col.fg+';font-size:18px">'+(open?'▴':'▾')+'</span></div>'+
+      body+
+    '</div>';
+  }).join('');
+}
+/* importBlockHtml استُبدلت بـ editorCardsHtml */
 function wireImport(){
   const fb=$('#rXlsxBtn'), fi=$('#rXlsx'); if(fb&&fi){ fb.onclick=()=>fi.click(); fi.onchange=onSchoolXlsx; }
   const ac=$('#rAddCl'); if(ac) ac.onclick=addClassR;
