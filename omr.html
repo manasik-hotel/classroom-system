@@ -317,19 +317,8 @@
         <label class="field">اعرض طلاب الصف
           <select id="stViewClass" onchange="renderStudents()"><option value="">— كل الفصول —</option></select>
         </label>
-        <div id="bulkActionsBar" style="display:none;margin:10px 0;padding:10px;background:#eef6f4;border:1px solid var(--teal-l);border-radius:10px">
-          <span id="selCount" style="font-weight:700;color:var(--teal-d)">٠ محدّد</span>
-          <div class="row" style="margin-top:8px">
-            <button class="ghost" onclick="bulkMove()">↔️ نقل الطلاب</button>
-            <span id="bulkNoteBtns">
-            <button class="ghost" onclick="bulkNote('مرشد')">📨 ملاحظة للمرشد</button>
-            <button class="ghost" onclick="bulkNote('وكيل')">📨 ملاحظة للوكيل</button>
-            <button class="ghost" onclick="bulkNote('custom')">📝 كتابة ملاحظة</button>
-            </span>
-          </div>
-        </div>
         <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد.</div></div>
-        <p class="hint" style="margin:10px 0 0;line-height:1.9">📌 <b>عرض سجل الطالب:</b> اضغط رقم الهوية.<br>📌 <b>تسجيل الحضور والغياب والتأخّر:</b> اضغط اسم الطالب.<br>📌 <b>لإرسال الملاحظات للإدارة أو نقل الطلاب بين الفصول:</b> اختر الطالب من خانة الاختيار، تظهر الخيارات بالأعلى.</p>
+        <p class="hint" style="margin:10px 0 0;line-height:1.9">📌 <b>عرض سجل الطالب:</b> اضغط رقم الهوية.<br>📌 <b>تسجيل الحضور والغياب والتأخّر:</b> اضغط اسم الطالب.<br>📌 <b>نقل الطالب أو حذفه:</b> من الزرّين بجانب بطاقته. <b>إرسال ملاحظة عن طالب:</b> من تبويب «الملاحظات».</p>
         <button class="primary" style="margin-top:12px;width:100%;background:#0b7a63" onclick="commitAttendance()">💾 الحفظ في سجل الأعمال</button>
       </div>
     </div>
@@ -1944,13 +1933,15 @@ function renderStudents(){
     }
     html += `<div class="stcard" style="${cardBg}">
       <div class="top">
-        <input type="checkbox" class="stchk" ${chk} onchange="toggleSelStudent('${escapeHtml(s.seat)}',this.checked)">
         <div style="flex:1;min-width:0;text-align:right">
           <span class="nm" onclick="openAttMenu('${escapeHtml(s.seat)}')">${toArabic(i+1)}. ${escapeHtml(s.name)}</span>
           <div class="sub" style="overflow-wrap:anywhere;margin-top:3px"><span class="idlink" onclick="openStudentRecord('${escapeHtml(s.seat)}')">${escapeHtml(s.seat)}</span> · ${escapeHtml(classNameByCode(s.classCode)||s.classCode||'—')}${statChip}</div>
           ${noteLine}
         </div>
-        <button onclick="delStudent('${escapeHtml(s.seat)}')" style="flex:0 0 auto;width:auto;padding:6px 10px;border:1px solid var(--bad);background:#fff;color:var(--bad);border-radius:9px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap">حذف</button>
+        <div style="display:flex;flex-direction:column;gap:6px;flex:0 0 auto">
+          <button onclick="moveStudentOmr('${escapeHtml(s.seat)}')" style="width:auto;padding:6px 10px;border:1px solid var(--teal-d,#0b5a54);background:#fff;color:var(--teal-d,#0b5a54);border-radius:9px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap">↔️ نقل</button>
+          <button onclick="delStudent('${escapeHtml(s.seat)}')" style="width:auto;padding:6px 10px;border:1px solid var(--bad);background:#fff;color:var(--bad);border-radius:9px;font:inherit;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap">🗑 حذف</button>
+        </div>
       </div>
       ${menu}
     </div>`;
@@ -3542,7 +3533,7 @@ async function omrResolveClassAdmins(classCode){
   const norm=x=>normalizeDigits(String(x||'')).trim();
   const snap=await db.collection('users').where('schoolId','==',CLS_SESSION.schoolId).get();
   return snap.docs.map(d=>({id:d.id,...d.data()}))
-    .filter(u=>u.active!==false && (u.role==='agent'||u.role==='counselor') && (u.assignedClasses||[]).map(norm).includes(norm(classCode)))
+    .filter(u=>u.active!==false && (u.role==='agent'||u.role==='counselor'||u.role==='assistant') && (u.assignedClasses||[]).map(norm).includes(norm(classCode)))
     .map(u=>({userId:u.id,name:u.username,role:u.role}));
 }
 async function omrSendNote(seat,classCode,className,studentName,text){
@@ -3573,25 +3564,79 @@ function omrNoteCard(n,mineSent){
 }
 function omrComposeSend(){
   const code=document.getElementById('onClass').value, seat=document.getElementById('onStudent').value, text=(document.getElementById('onText').value||'').trim();
+  const rid=(document.getElementById('onRecip')||{}).value;
   if(!code||!seat){ alert('اختر الفصل والطالب.'); return; }
+  if(!rid){ alert('اختر المستلِم من القائمة.'); return; }
   if(!text){ alert('اكتب نص الملاحظة.'); return; }
   const cl=state.classes.find(c=>String(c.code)===String(code))||{};
   const st=state.students.find(s=>String(s.seat)===String(seat)&&String(s.classCode)===String(code))||{};
-  omrSendNote(seat,code,cl.name||'',st.name||'',text);
+  omrSendNoteTo(rid,seat,code,cl.name||'',st.name||'',text);
+}
+async function omrSendNoteTo(rid,seat,classCode,className,studentName,text){
+  try{
+    const us=await db.collection('users').doc(rid).get(); const u=us.data();
+    const info=[{userId:rid,name:u.username,role:u.role}];
+    await db.collection('notes').add({ schoolId:CLS_SESSION.schoolId, period:CLS_SESSION.period,
+      fromUserId:CLS_SESSION.userId, fromName:CLS_SESSION.username, fromRole:CLS_SESSION.role,
+      recipients:[rid], recipientsInfo:info, scope:'student',
+      studentSeat:String(seat), studentName:studentName, classCode:String(classCode), className:className,
+      text:text, createdAt:Date.now(), replies:[], readBy:[] });
+    alert('تم إرسال الملاحظة.'); renderOmrNotes();
+  }catch(e){ alert('فشل الإرسال: '+(e.message||e)); }
+}
+function moveStudentOmr(seat){
+  if(!clsGuardEdit()) return;
+  const st=state.students.find(s=>s.seat===seat); if(!st) return;
+  const opts=state.classes.filter(c=>String(c.code)!==String(st.classCode)).map(c=>'<option value="'+escapeHtml(c.code)+'">'+escapeHtml(c.name)+'</option>').join('');
+  if(!opts){ alert('لا يوجد فصل آخر للنقل إليه.'); return; }
+  omrModal(
+    '<div style="width:42px;height:4px;border-radius:9px;background:#ddd;margin:0 auto 14px"></div>'+
+    '<h3 style="margin:0 0 4px">نقل طالب بين الفصول</h3>'+
+    '<div style="color:#888;font-size:13px;margin-bottom:12px">'+escapeHtml(st.name)+' — '+escapeHtml(st.seat||'')+'</div>'+
+    '<label style="font-weight:700;font-size:14px;display:block;margin-bottom:6px">نقل إلى الفصل</label>'+
+    '<select id="mvClsOmr" style="width:100%;padding:11px;border:1px solid var(--line,#d7dede);border-radius:10px;font:inherit;text-align:right;background:#fff">'+opts+'</select>'+
+    '<div style="display:flex;gap:8px;margin-top:14px">'+
+      '<button class="ghost" style="flex:1;padding:11px" onclick="closeOmrModal()">إلغاء</button>'+
+      '<button style="flex:2;padding:11px;background:var(--teal,#0f766e);color:#fff;border:none;border-radius:10px;font:inherit;font-weight:700" onclick="doMoveStudentOmr(\''+escapeHtml(seat)+'\')">نقل</button>'+
+    '</div>'
+  );
+}
+function doMoveStudentOmr(seat){
+  const to=(document.getElementById('mvClsOmr')||{}).value; if(!to) return;
+  const st=state.students.find(s=>s.seat===seat); if(!st) return;
+  if(state.students.some(x=>x.seat===seat && String(x.classCode)===String(to))){ alert('الطالب موجود في الفصل الهدف.'); return; }
+  st.classCode=to; closeOmrModal(); renderStudents(); saveStudentsToCloud();
+  alert('تم نقل الطالب.');
 }
 async function renderOmrNotes(){
   const host=document.getElementById('omrNotesHost'); if(!host) return;
   const classOpts=state.classes.map(c=>'<option value="'+c.code+'">'+escapeHtml(c.name)+'</option>').join('');
   host.innerHTML=
-    '<div class="subcard"><div class="subtitle">📨 إرسال ملاحظة عن طالب <span class="sub">تُرسل تلقائياً للوكيل/الموجه المرتبط بالفصل</span></div>'+
+    '<div class="subcard"><div class="subtitle">📨 إرسال ملاحظة عن طالب <span class="sub">إلى الوكيل/الموجه/المساعد الإداري المسنَد للفصل</span></div>'+
     '<label class="field" style="margin-top:6px">الفصل<select id="onClass"><option value="">— اختر —</option>'+classOpts+'</select></label>'+
     '<label class="field" style="margin-top:8px">الطالب<select id="onStudent"><option value="">— اختر الفصل أولاً —</option></select></label>'+
+    '<div id="onCount" class="sub" style="margin-top:6px"></div>'+
+    '<label class="field" style="margin-top:8px">المستلِم<select id="onRecip"><option value="">— اختر الطالب أولاً —</option></select></label>'+
     '<label class="field" style="margin-top:8px">نص الملاحظة<textarea id="onText" rows="3" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fcfdfd"></textarea></label>'+
     '<button class="primary" style="margin-top:8px" onclick="omrComposeSend()">📨 إرسال</button></div>'+
     '<div id="omrInbox" style="margin-top:12px"><div class="empty">جارٍ تحميل الملاحظات…</div></div>';
   const cs=document.getElementById('onClass');
   if(cs) cs.onchange=function(){ const code=this.value; const studs=state.students.filter(s=>String(s.classCode)===String(code));
-    document.getElementById('onStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+s.seat+'">'+escapeHtml(s.name)+'</option>').join(''); };
+    document.getElementById('onStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+s.seat+'">'+escapeHtml(s.name)+'</option>').join('');
+    document.getElementById('onRecip').innerHTML='<option value="">— اختر الطالب أولاً —</option>';
+    document.getElementById('onCount').textContent=''; };
+  const ss=document.getElementById('onStudent');
+  if(ss) ss.onchange=async function(){
+    const code=document.getElementById('onClass').value, seat=this.value;
+    const cc=document.getElementById('onCount'), rc=document.getElementById('onRecip');
+    if(!seat){ if(cc)cc.textContent=''; if(rc)rc.innerHTML='<option value="">— اختر الطالب أولاً —</option>'; return; }
+    if(cc) cc.textContent='⏳ …'; if(rc) rc.innerHTML='<option value="">⏳ …</option>';
+    const [n, admins] = await Promise.all([omrStudentNoteCount(seat), omrResolveClassAdmins(code)]);
+    if(cc) cc.innerHTML='📊 عدد الملاحظات المرسلة عن هذا الطالب: <b>'+toArabic(n)+'</b>';
+    if(rc) rc.innerHTML = admins.length
+      ? admins.map(a=>'<option value="'+escapeHtml(a.userId)+'">'+escapeHtml(a.name)+' ('+(a.role==='counselor'?'موجه طلابي':a.role==='agent'?'وكيل':'مساعد إداري')+')</option>').join('')
+      : '<option value="">لا يوجد مستلِم مُسنَد لهذا الفصل</option>';
+  };
   try{
     const [recv,sent]=await Promise.all([
       db.collection('notes').where('recipients','array-contains',CLS_SESSION.userId).get(),

@@ -529,14 +529,15 @@ async function loadUsersList(){
   }catch(e){ wrap.innerHTML=`<div class="alert err">${esc(e.message)}</div>`; }
 }
 
-let editUser=null, editPerms=null;
+let editUser=null, editPerms=null, permReadonly=false, umReadonly=false;
 async function openUserModal(id){
   editUser = null; 
   if(id){ const s=await usersCol().doc(id).get(); editUser={id:s.id,...s.data()}; }
   const e = editUser;
   editPerms = e ? JSON.parse(JSON.stringify(e.permissions||defaultPerms(e.role))) : defaultPerms('teacher');
   const schoolOpts = Object.entries(SCHOOLS).map(([sid,s])=>`<option value="${esc(sid)}" ${e&&e.schoolId===sid?'selected':''}>${esc(s.name)}</option>`).join('');
-  const roleOpts = Object.entries(ROLES).filter(([k])=>k!=='admin').map(([k,v])=>`<option value="${k}" ${e&&e.role===k?'selected':''}>${esc(v)}</option>`).join('');
+  const isAdminU = !!(e && e.role==='admin'); umReadonly=isAdminU; permReadonly=isAdminU;
+  const roleOpts = Object.entries(ROLES).filter(([k])=> k!=='admin' || isAdminU).map(([k,v])=>`<option value="${k}" ${e&&e.role===k?'selected':''}>${esc(v)}</option>`).join('');
   modal(`<h2>${e?'تعديل مستخدم':'إضافة مستخدم'}</h2>
     <div id="umAlert"></div>
     <div class="field" style="margin-bottom:6px"><label>حالة الحساب</label>
@@ -565,6 +566,11 @@ async function openUserModal(id){
   $('#umRole').onchange=()=>{ editPerms=defaultPerms($('#umRole').value); renderPermTree(); toast('طُبِّقت صلاحيات الدور الافتراضية'); };
   renderPermTree();
   $('#umSave').onclick=()=>saveUser(activeState);
+  if(isAdminU){
+    ['umSchool','umUser','umRole'].forEach(id=>{ const el=$('#'+id); if(el) el.disabled=true; });
+    ['umActive','umInactive'].forEach(id=>{ const el=$('#'+id); if(el){ el.onclick=null; el.style.opacity='.55'; el.style.pointerEvents='none'; } });
+    const al=$('#umAlert'); if(al) al.innerHTML='<div class="sub-note" style="margin:0 0 8px;color:var(--accent)">🔒 حساب الأدمن: كل الصلاحيات والفصول ممنوحة وبلا مدرسة محددة. لا يمكن تعديل سوى <b>كلمة المرور</b>.</div>';
+  }
 }
 async function loadModalClasses(schoolId, pre){
   const host=$('#umClassesHost'); if(!host) return;
@@ -576,7 +582,7 @@ async function loadModalClasses(schoolId, pre){
   const preset=(pre||[]).map(String);
   host.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:8px">'+classes.map(c=>
     '<label style="display:flex;align-items:center;gap:6px;padding:8px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--surface-2);font-weight:600;font-size:13.5px;cursor:pointer">'+
-    '<input type="checkbox" class="umCls" value="'+esc(c.code)+'" '+(preset.includes(String(c.code))?'checked':'')+' style="width:17px;height:17px;accent-color:var(--accent)">'+esc(c.name)+'</label>'
+    '<input type="checkbox" class="umCls" '+(umReadonly?'disabled ':'')+'value="'+esc(c.code)+'" '+(preset.includes(String(c.code))?'checked':'')+' style="width:17px;height:17px;accent-color:var(--accent)">'+esc(c.name)+'</label>'
   ).join('')+'</div>';
 }
 function renderPermTree(){
@@ -585,11 +591,12 @@ function renderPermTree(){
     <div class="perm-head">${esc(g.label)}</div>
     ${g.leaves.map(l=>{
       const p=editPerms[l.key]||{access:false,edit:false,del:false};
+      const ro = permReadonly?'disabled':'';
       return `<div class="perm-leaf ${l.sub?'sub':''}">
         <span class="pl-name">${l.sub?'↳ ':''}${esc(l.label)}</span>
-        <label class="chk"><input type="checkbox" data-k="${l.key}" data-f="access" ${p.access?'checked':''}> وصول</label>
-        <label class="chk"><input type="checkbox" data-k="${l.key}" data-f="edit" ${p.edit?'checked':''}> تعديل</label>
-        <label class="chk"><input type="checkbox" data-k="${l.key}" data-f="del" ${p.del?'checked':''}> حذف</label>
+        <label class="chk"><input type="checkbox" ${ro} data-k="${l.key}" data-f="access" ${p.access?'checked':''}> وصول</label>
+        <label class="chk"><input type="checkbox" ${ro} data-k="${l.key}" data-f="edit" ${p.edit?'checked':''}> تعديل</label>
+        <label class="chk"><input type="checkbox" ${ro} data-k="${l.key}" data-f="del" ${p.del?'checked':''}> حذف</label>
       </div>`;
     }).join('')}
   </div>`).join('');
@@ -601,6 +608,15 @@ function renderPermTree(){
   });
 }
 async function saveUser(active){
+  if(editUser && editUser.role==='admin'){
+    const pass=$('#umPass').value;
+    if(!pass){ alertBox('umAlert','err','أدخل كلمة المرور'); return; }
+    try{
+      await usersCol().doc(editUser.id).update({ password:pass, role:'admin', schoolId:null, assignedClasses:[], permissions:defaultPerms('admin'), active:true, mustChangePassword:false, updatedAt:Date.now() });
+      toast('تم تحديث كلمة مرور الأدمن'); closeModal(); loadUsersList();
+    }catch(e){ alertBox('umAlert','err',e.message); }
+    return;
+  }
   const school=$('#umSchool').value, user=$('#umUser').value.trim(), pass=$('#umPass').value,
         role=$('#umRole').value,
         classes=[...document.querySelectorAll('.umCls:checked')].map(x=>x.value);
@@ -1093,33 +1109,43 @@ async function createNote(n){
     classCode:n.classCode||'', className:n.className||'', text:n.text,
     createdAt:Date.now(), replies:[], readBy:[] });
 }
-function noteCard(n, mineSent){
+function noteCard(n, mineSent, counts){
   const unread = !mineSent && !((n.readBy||[]).includes(CURRENT.id));
   const who = mineSent
     ? ('إلى: '+(n.recipientsInfo||[]).map(r=>esc(r.name)+' ('+(ROLES[r.role]||r.role)+')').join('، '))
     : ('من: '+esc(n.fromName)+' ('+(ROLES[n.fromRole]||n.fromRole)+')');
-  const stu = (n.studentName||n.studentSeat) ? '<div class="umeta">بخصوص: '+esc(n.studentName||'')+(n.className?(' · '+esc(n.className)):'')+'</div>' : '';
+  const cnt = (counts && n.studentSeat && counts[n.studentSeat]) ? counts[n.studentSeat] : 0;
+  const stu = (n.studentName||n.studentSeat)
+    ? '<div class="umeta">بخصوص: '+esc(n.studentName||'')+(n.className?(' · '+esc(n.className)):'')+'</div>'+
+      (cnt?'<div class="umeta" style="color:var(--accent);font-weight:700">📊 عدد الملاحظات عن هذا الطالب: '+cnt+'</div>':'')
+    : '';
   const reps=(n.replies||[]).map(r=>'<div style="border-top:1px solid var(--line);padding:6px 0;font-size:13px"><b>'+esc(r.fromName)+':</b> '+esc(r.text)+'</div>').join('');
   const repliedByOther=(n.replies||[]).some(r=>r.fromUserId!==CURRENT.id);
   const canReply = mineSent ? repliedByOther : true;
   const replyBtn = canReply
     ? '<button class="btn ghost" style="margin-top:6px" onclick="replyNote(\''+n.id+'\')">↩︎ رد</button>'
     : (mineSent? '<div class="umeta" style="margin-top:6px">⏳ بانتظار رد المستلم قبل أن تتمكّن من الرد</div>':'');
+  const readBtn = unread ? '<button class="btn ghost" style="margin-top:6px" onclick="markNoteRead(\''+n.id+'\')">✓ تحديد كمقروء</button>' : '';
   return '<div class="card"'+(unread?' style="border-color:var(--accent);background:#EFFAF8"':'')+'><div class="uinfo">'+
     (unread?'<span class="pill" style="background:var(--accent);color:#fff;margin-bottom:6px;display:inline-block">🔔 جديدة</span> ':'')+
     '<div class="uname" style="font-size:14px">'+who+'</div>'+stu+
     '<div style="margin:8px 0;font-size:14.5px;white-space:pre-wrap">'+esc(n.text)+'</div>'+
     '<div class="umeta">'+new Date(n.createdAt).toLocaleString('ar')+'</div>'+
     (reps?'<div style="margin-top:8px">'+reps+'</div>':'')+
-    replyBtn+'</div></div>';
+    '<div style="display:flex;gap:8px;flex-wrap:wrap">'+replyBtn+readBtn+'</div></div></div>';
+}
+async function markNoteRead(id){
+  try{ await notesCol().doc(id).update({ readBy: firebase.firestore.FieldValue.arrayUnion(CURRENT.id) }); }catch(e){}
+  refreshUnread(); renderReceived($('#content'));
 }
 async function replyNote(id){
   if(!can('index.received','edit') && !can('index.sent','edit')){ toast('ليس لديك صلاحية الرد (مشاهدة فقط).'); return; }
   const txt=prompt('اكتب ردّك:'); if(!txt||!txt.trim()) return;
   try{
     await notesCol().doc(id).update({ replies: firebase.firestore.FieldValue.arrayUnion(
-      {fromUserId:CURRENT.id,fromName:CURRENT.username,fromRole:CURRENT.role,text:txt.trim(),at:Date.now()}) });
-    toast('تم إرسال الرد'); (activeTab==='received'?renderReceived:renderSent)($('#content'));
+      {fromUserId:CURRENT.id,fromName:CURRENT.username,fromRole:CURRENT.role,text:txt.trim(),at:Date.now()}),
+      readBy: firebase.firestore.FieldValue.arrayUnion(CURRENT.id) });
+    toast('تم إرسال الرد'); refreshUnread(); (activeTab==='received'?renderReceived:renderSent)($('#content'));
   }catch(e){ toast('خطأ: '+e.message); }
 }
 async function renderSent(c){
@@ -1137,12 +1163,10 @@ async function renderReceived(c){
   try{
     const snap=await notesCol().where('recipients','array-contains',CURRENT.id).get();
     let arr=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>n.period===SESSION.period).sort((a,b)=>b.createdAt-a.createdAt);
-    $('#notesList').innerHTML = arr.length? arr.map(n=>noteCard(n,false)).join('') : '<div class="empty"><span class="e-emoji">📥</span>لا ملاحظات واردة.</div>';
-    const unreadIds=arr.filter(n=>!((n.readBy||[]).includes(CURRENT.id))).map(n=>n.id);
-    if(unreadIds.length){
-      for(const id of unreadIds){ try{ await notesCol().doc(id).update({ readBy: firebase.firestore.FieldValue.arrayUnion(CURRENT.id) }); }catch(e){} }
-      refreshUnread();
-    }
+    const seats=[...new Set(arr.map(n=>n.studentSeat).filter(Boolean))];
+    const counts={};
+    await Promise.all(seats.map(async seat=>{ counts[seat]=await studentNoteCount(seat); }));
+    $('#notesList').innerHTML = arr.length? arr.map(n=>noteCard(n,false,counts)).join('') : '<div class="empty"><span class="e-emoji">📥</span>لا ملاحظات واردة.</div>';
   }catch(e){ $('#notesList').innerHTML='<div class="alert err">'+esc(e.message)+'</div>'; }
 }
 async function refreshUnread(){
@@ -1152,51 +1176,56 @@ async function refreshUnread(){
   }catch(e){ unreadNotes=0; }
   const bd=$('#rcvBadge'); if(bd){ bd.textContent=unreadNotes; bd.style.display=unreadNotes>0?'inline-flex':'none'; }
 }
-let composeRoster={classes:[],students:[]}, composePeers=[];
+let composeRoster={classes:[],students:[]}, composeUsers=[];
 async function openCompose(){
   try{ const s=await rosterDoc(CURRENT.schoolId).get(); const d=s.exists?JSON.parse(s.data().value||'{}'):{}; composeRoster={classes:d.classes||[],students:d.students||[]}; }
   catch(e){ composeRoster={classes:[],students:[]}; }
-  composePeers=[];
+  composeUsers=[];
   try{
     const us=await usersCol().where('schoolId','==',CURRENT.schoolId).get();
-    const other=CURRENT.role==='agent'?'counselor':'agent';
-    composePeers=us.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.active!==false&&u.role===other).map(u=>({id:u.id,name:u.username}));
+    composeUsers=us.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.active!==false && u.id!==CURRENT.id);
   }catch(e){}
-  const peerLabel = CURRENT.role==='agent' ? 'موجّه طلابي' : 'وكيل';
-  const peerOpts = composePeers.map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
+  const classOpts=composeRoster.classes.map(c=>'<option value="'+esc(c.code)+'">'+esc(c.name)+'</option>').join('');
   modal('<h2>ملاحظة جديدة</h2><div id="cmpAlert"></div>'+
     '<div class="field"><label>نوع الملاحظة</label><select id="cmpKind">'+
-      '<option value="toTeacher">عن طالب → إلى معلّمه</option>'+
-      '<option value="toPeers">إلى '+esc(peerLabel)+' محدّد</option></select></div>'+
-    '<div id="cmpStudentWrap">'+
-      '<div class="field"><label>الفصل</label><select id="cmpClass"><option value="">— اختر —</option>'+composeRoster.classes.map(c=>'<option value="'+esc(c.code)+'">'+esc(c.name)+'</option>').join('')+'</select></div>'+
-      '<div class="field"><label>الطالب</label><select id="cmpStudent"><option value="">— اختر الفصل أولاً —</option></select></div>'+
-      '<div id="cmpCount" class="sub-note" style="margin:0 0 10px"></div></div>'+
-    '<div id="cmpPeerWrap" style="display:none"><div class="field"><label>إلى</label><select id="cmpPeer"><option value="">— اختر —</option>'+peerOpts+'</select></div></div>'+
+      '<option value="toTeacher">عن طالب ← إلى معلّمه</option>'+
+      '<option value="toPeers">عن طالب ← إلى موجّه طلابي أو وكيل</option></select></div>'+
+    '<div class="field"><label>الفصل</label><select id="cmpClass"><option value="">— اختر —</option>'+classOpts+'</select></div>'+
+    '<div class="field"><label>الطالب</label><select id="cmpStudent"><option value="">— اختر الفصل أولاً —</option></select></div>'+
+    '<div id="cmpCount" class="sub-note" style="margin:0 0 10px"></div>'+
+    '<div class="field"><label>إلى</label><select id="cmpRecip"><option value="">— اختر —</option></select></div>'+
     '<div class="field"><label>نص الملاحظة</label><textarea id="cmpText" rows="4" style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface-2);font-family:inherit"></textarea></div>'+
     '<div class="modal-row"><button class="btn secondary" onclick="closeModal()">إلغاء</button><button class="btn" id="cmpSend">إرسال</button></div>');
-  const upd=()=>{ const k=$('#cmpKind').value; $('#cmpStudentWrap').style.display=k==='toTeacher'?'block':'none'; $('#cmpPeerWrap').style.display=k==='toPeers'?'block':'none'; };
-  $('#cmpKind').onchange=upd; upd();
+  const fillRecip=()=>{
+    const kind=$('#cmpKind').value, code=$('#cmpClass').value, sel=$('#cmpRecip'); if(!sel) return;
+    if(kind==='toTeacher'){
+      const teachers=composeUsers.filter(u=>u.role==='teacher' && (u.assignedClasses||[]).map(_normN).includes(_normN(code)));
+      sel.innerHTML='<option value="">جميع معلمي الطالب</option>'+teachers.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.username)+'</option>').join('');
+    } else {
+      const peers=composeUsers.filter(u=>u.role==='agent'||u.role==='counselor');
+      sel.innerHTML='<option value="">— اختر —</option>'+peers.map(u=>'<option value="'+esc(u.id)+'">'+esc(u.username)+' ('+(ROLES[u.role]||u.role)+')</option>').join('');
+    }
+  };
+  $('#cmpKind').onchange=fillRecip;
   $('#cmpClass').onchange=()=>{ const code=$('#cmpClass').value; const studs=composeRoster.students.filter(s=>String(s.classCode)===String(code));
-    $('#cmpStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+esc(s.seat)+'">'+esc(s.name)+'</option>').join(''); const cc=$('#cmpCount'); if(cc) cc.textContent=''; };
+    $('#cmpStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+esc(s.seat)+'">'+esc(s.name)+'</option>').join(''); const cc=$('#cmpCount'); if(cc) cc.textContent=''; fillRecip(); };
   $('#cmpStudent').onchange=async()=>{ const seat=$('#cmpStudent').value; const cc=$('#cmpCount'); if(!cc) return; if(!seat){ cc.textContent=''; return; }
     cc.textContent='⏳ …'; const n=await studentNoteCount(seat); cc.innerHTML='📊 عدد الملاحظات المرسلة عن هذا الطالب من جميع المستخدمين: <b>'+n+'</b>'; };
+  fillRecip();
   $('#cmpSend').onclick=doCompose;
 }
 async function doCompose(){
   const kind=$('#cmpKind').value, text=($('#cmpText').value||'').trim();
+  const code=$('#cmpClass').value, seat=$('#cmpStudent').value;
+  if(!code||!seat){ alertBox('cmpAlert','err','اختر الفصل والطالب'); return; }
   if(!text){ alertBox('cmpAlert','err','اكتب نص الملاحظة'); return; }
-  const payload={kind, scope:kind==='toPeers'?'peers':'student', fromRole:CURRENT.role, schoolId:CURRENT.schoolId, text};
-  if(kind==='toTeacher'){
-    const code=$('#cmpClass').value, seat=$('#cmpStudent').value;
-    if(!code||!seat){ alertBox('cmpAlert','err','اختر الفصل والطالب'); return; }
-    const cl=composeRoster.classes.find(c=>String(c.code)===String(code))||{};
-    const st=composeRoster.students.find(s=>String(s.seat)===String(seat)&&String(s.classCode)===String(code))||{};
-    payload.classCode=code; payload.className=cl.name||''; payload.studentSeat=seat; payload.studentName=st.name||'';
-  } else {
-    const pid=$('#cmpPeer').value; if(!pid){ alertBox('cmpAlert','err','اختر المستقبِل'); return; }
-    payload.recipientId=pid;
-  }
+  const cl=composeRoster.classes.find(c=>String(c.code)===String(code))||{};
+  const st=composeRoster.students.find(s=>String(s.seat)===String(seat)&&String(s.classCode)===String(code))||{};
+  const payload={kind, scope:'student', fromRole:CURRENT.role, schoolId:CURRENT.schoolId, text,
+    classCode:code, className:cl.name||'', studentSeat:seat, studentName:st.name||''};
+  const rid=$('#cmpRecip').value;
+  if(kind==='toPeers' && !rid){ alertBox('cmpAlert','err','اختر المستقبِل (موجّه أو وكيل)'); return; }
+  if(rid) payload.recipientId=rid;
   try{ await createNote(payload); closeModal(); toast('تم الإرسال'); renderSent($('#content')); }
   catch(e){ alertBox('cmpAlert','err',e.message); }
 }
