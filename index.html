@@ -247,6 +247,7 @@ const PERM_TREE = [
     { key:'index.sent',     label:'الملاحظات المرسلة' },
     { key:'index.received', label:'الملاحظات الواردة' },
     { key:'index.absence',  label:'غياب الطلاب' },
+    { key:'index.studentStatus', label:'حالة الطالب' },
     { key:'index.users',    label:'المستخدمون' },
     { key:'index.settings', label:'إعدادات النظام' },
   ]},
@@ -268,12 +269,13 @@ function defaultPerms(role){
   const set=(k,a,e,d)=>{ if(p[k]) p[k]={access:!!a,edit:!!e,del:!!d}; };
   if(role==='admin'){ ALL_PERM_KEYS.forEach(k=>p[k]={access:true,edit:true,del:true}); return p; }
   if(role==='manager'){            // الرئيسية كاملة عدا المستخدمون/الإعدادات — مشاهدة فقط
-    ['index.classes','index.sent','index.received','index.absence'].forEach(k=>set(k,true,false,false));
+    ['index.classes','index.sent','index.received','index.absence','index.studentStatus'].forEach(k=>set(k,true,false,false));
   } else if(role==='agent'){        // وكيل: وصول+تعديل (المرسلة، الواردة، الغياب)
     ['index.sent','index.received','index.absence'].forEach(k=>set(k,true,true,false));
   } else if(role==='counselor'){    // موجه: وصول+تعديل (المرسلة، الواردة) + مشاهدة (الغياب)
     ['index.sent','index.received'].forEach(k=>set(k,true,true,false));
     set('index.absence',true,false,false);
+    set('index.studentStatus',true,true,false);
   } else if(role==='assistant'){    // مساعد إداري: وصول+تعديل (الفصول والطلاب، الغياب)
     ['index.classes','index.absence'].forEach(k=>set(k,true,true,false));
   } else if(role==='teacher'){      // معلم: المرسلة/الواردة + صفحة التصحيح كاملة
@@ -289,6 +291,7 @@ const INDEX_TABS = [
   { key:'sent',     perm:'index.sent',     label:'الملاحظات المرسلة' },
   { key:'received', perm:'index.received', label:'الملاحظات الواردة' },
   { key:'absence',  perm:'index.absence',  label:'غياب الطلاب' },
+  { key:'studentStatus', perm:'index.studentStatus', label:'حالة الطالب' },
   { key:'users',    perm:'index.users',    label:'المستخدمون' },
   { key:'settings', perm:'index.settings', label:'إعدادات النظام' },
 ];
@@ -475,6 +478,109 @@ function openMenu(){
 /* ========================================================================
    عرض اللوحات
    ======================================================================== */
+/* ======================== غياب الطلاب + حالة الطالب ======================== */
+const attCol = ()=>db.collection('attendance');
+let RABS={}, SS_DATA={classes:[],students:[]};
+function attDateKey(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function attDocIdFor(sid,period,seat,dk){ return 'att_'+sid+'_'+period+'_'+seat+'_'+dk; }
+async function markStudentAbsent(seat,name,classCode,className){
+  const sid=RSchoolId||CURRENT.schoolId; const dk=attDateKey();
+  await attCol().doc(attDocIdFor(sid,SESSION.period,seat,dk)).set({
+    schoolId:sid, period:SESSION.period, seat:String(seat), name:name||'',
+    classCode:String(classCode||''), className:className||'', date:dk, status:'absent',
+    markedBy:CURRENT.id, markedByName:CURRENT.username, ts:Date.now() }, {merge:true});
+}
+async function loadAbsenceCounts(){
+  RABS={};
+  try{ const sid=RSchoolId; if(!sid) return;
+    const snap=await attCol().where('schoolId','==',sid).get();
+    snap.docs.map(d=>d.data()).filter(a=>a.period===SESSION.period && a.status==='absent').forEach(a=>{ RABS[a.seat]=(RABS[a.seat]||0)+1; });
+  }catch(e){}
+}
+function markAbsentFromClasses(seat,code){
+  const st=RStudents.find(x=>x.seat===seat&&String(x.classCode)===String(code))||RStudents.find(x=>x.seat===seat); if(!st) return;
+  const cl=RClasses.find(c=>String(c.code)===String(code))||{};
+  confirmModal('تغييب طالب','تسجيل «'+esc(st.name)+'» غائباً اليوم؟ سينتقل إلى تبويب غياب الطلاب.',async()=>{
+    try{ await markStudentAbsent(seat,st.name,code,cl.name||''); await loadAbsenceCounts(); toast('تم تسجيل الغياب'); paintClasses(); }
+    catch(e){ toast('خطأ: '+e.message); }
+  });
+}
+async function renderAbsence(c){
+  const canEdit=can('index.absence','edit');
+  c.innerHTML='<div class="panel-head"><h2>غياب الطلاب</h2></div><div class="sub-note">يُعتمد التغيب من المعلم بين 7:40 و10:00 صباحاً، أو يدوياً من «الفصول والطلاب».</div><div id="absRoot"><div class="empty"><span class="spin"></span></div></div>';
+  try{
+    let q=attCol(); if(CURRENT.schoolId) q=q.where('schoolId','==',CURRENT.schoolId);
+    const snap=await q.get();
+    let arr=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>n.period===SESSION.period && n.status && n.status!=='present');
+    const days={}; arr.forEach(a=>{ if(a.status==='absent') days[a.seat]=(days[a.seat]||0)+1; });
+    const byDate={}; arr.forEach(a=>{ (byDate[a.date]=byDate[a.date]||[]).push(a); });
+    const dates=Object.keys(byDate).sort((a,b)=>String(b).localeCompare(String(a)));
+    if(!dates.length){ $('#absRoot').innerHTML='<div class="empty"><span class="e-emoji">✅</span>لا غيابات حالياً.</div>'; return; }
+    const norm=x=>_normN(x);
+    $('#absRoot').innerHTML=dates.map(dt=>{
+      const list=byDate[dt].slice().sort((a,b)=>norm(a.classCode).localeCompare(norm(b.classCode),undefined,{numeric:true}));
+      let title=dt; try{ title=new Date(dt+'T00:00:00').toLocaleDateString('ar',{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){}
+      return '<div class="card"><div class="uname" style="font-size:15px;margin-bottom:10px">📅 '+esc(title)+'</div>'+
+        list.map(a=>absRow(a,days[a.seat]||0,canEdit)).join('')+'</div>';
+    }).join('');
+  }catch(e){ $('#absRoot').innerHTML='<div class="alert err">'+esc(e.message)+'</div>'; }
+}
+function absRow(a,dayCount,canEdit){
+  const bg = a.status==='excused'?'#FFF7E6':a.status==='late'?'#FFF1E0':'#FDECEC';
+  const stLbl = a.status==='excused'?('🟡 مستأذن'+(a.excuseTime?(' · '+esc(a.excuseTime)):'')):a.status==='late'?('🟠 متأخر'+(a.entryTime?(' · دخول '+esc(a.entryTime)):'')):'🔴 غائب';
+  const ctrl = canEdit ? '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:8px">'+
+      '<button class="btn ghost sm" onclick="absSet(\''+a.id+'\',\'present\')">✅ حاضر</button>'+
+      '<button class="btn ghost sm" onclick="absSet(\''+a.id+'\',\'late\')">🟠 متأخر</button>'+
+      '<button class="btn ghost sm" onclick="absSet(\''+a.id+'\',\'excused\')">🟡 مستأذن</button>'+
+    '</div>' : '';
+  return '<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;background:'+bg+'">'+
+    '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">'+
+      '<div><div style="font-weight:700">'+esc(a.name)+'</div>'+
+      '<div class="umeta">'+esc(a.seat)+' · '+esc(a.className||a.classCode||'')+'</div></div>'+
+      '<div style="text-align:left;white-space:nowrap"><div style="font-weight:700;font-size:13px">'+stLbl+'</div>'+
+      '<div class="umeta" style="margin-top:4px">أيام الغياب: <b>'+dayCount+'</b></div></div>'+
+    '</div>'+ctrl+'</div>';
+}
+function hoursOptions(){
+  let o=''; for(let h=0;h<24;h++){ const hh=String(h).padStart(2,'0'); o+='<option value="'+hh+':00">'+hh+':00</option><option value="'+hh+':30">'+hh+':30</option>'; } return o;
+}
+async function absSet(id,status){
+  if(status==='present'){ try{ await attCol().doc(id).delete(); }catch(e){} renderAbsence($('#content')); return; }
+  const lbl=status==='late'?'وقت الدخول':'وقت الاستئذان';
+  modal('<h2>'+(status==='late'?'تسجيل تأخّر':'تسجيل استئذان')+'</h2>'+
+    '<div class="field"><label>'+lbl+'</label><select id="absTime">'+hoursOptions()+'</select></div>'+
+    '<div class="modal-row"><button class="btn secondary" onclick="closeModal()">إلغاء</button><button class="btn" id="absTimeOk">حفظ</button></div>');
+  $('#absTimeOk').onclick=async()=>{ const t=$('#absTime').value; const upd={status}; if(status==='late')upd.entryTime=t; else upd.excuseTime=t;
+    try{ await attCol().doc(id).update(upd); }catch(e){} closeModal(); renderAbsence($('#content')); };
+}
+async function renderStudentStatus(c){
+  const canEdit=can('index.studentStatus','edit');
+  c.innerHTML='<div class="panel-head"><h2>حالة الطالب</h2></div><div class="sub-note">الحالة الاجتماعية والصحية لكل طالب'+(canEdit?' — تُعبّأ من الموجه الطلابي.':' — عرض فقط.')+'</div><div id="ssRoot"><div class="empty"><span class="spin"></span></div></div>';
+  let classes=[],students=[];
+  try{ const sp=await rosterDoc(CURRENT.schoolId).get(); if(sp.exists){ const d=JSON.parse(sp.data().value||'{}'); classes=Array.isArray(d.classes)?d.classes:[]; students=Array.isArray(d.students)?d.students:[]; } }catch(e){}
+  SS_DATA={classes,students};
+  if(!students.length){ $('#ssRoot').innerHTML='<div class="empty"><span class="e-emoji">👤</span>لا طلاب في روستر المدرسة.</div>'; return; }
+  const norm=x=>_normN(x);
+  students.sort((a,b)=>norm(a.classCode).localeCompare(norm(b.classCode),undefined,{numeric:true}));
+  $('#ssRoot').innerHTML=students.map(st=>{
+    const cl=classes.find(c=>String(c.code)===String(st.classCode))||{};
+    return '<div class="card"><div class="uname" style="font-size:14px">'+esc(st.name)+'</div>'+
+      '<div class="umeta" style="margin-bottom:8px">'+esc(st.seat||'')+' · '+esc(cl.name||st.classCode||'')+'</div>'+
+      '<div class="field"><label>الحالة الاجتماعية</label><input class="ssSocial" data-seat="'+esc(st.seat)+'" value="'+esc(st.social||'')+'" '+(canEdit?'':'disabled')+' placeholder="—"></div>'+
+      '<div class="field"><label>الصحة</label><input class="ssHealth" data-seat="'+esc(st.seat)+'" value="'+esc(st.health||'')+'" '+(canEdit?'':'disabled')+' placeholder="—"></div>'+
+    '</div>';
+  }).join('') + (canEdit?'<button class="btn" id="ssSave" style="margin-top:8px">💾 حفظ الكل</button>':'');
+  if(canEdit){ const b=$('#ssSave'); if(b) b.onclick=saveStudentStatus; }
+}
+async function saveStudentStatus(){
+  document.querySelectorAll('.ssSocial').forEach(inp=>{ const st=SS_DATA.students.find(x=>String(x.seat)===String(inp.dataset.seat)); if(st) st.social=inp.value.trim(); });
+  document.querySelectorAll('.ssHealth').forEach(inp=>{ const st=SS_DATA.students.find(x=>String(x.seat)===String(inp.dataset.seat)); if(st) st.health=inp.value.trim(); });
+  try{
+    const sp=await rosterDoc(CURRENT.schoolId).get(); const d=sp.exists?JSON.parse(sp.data().value||'{}'):{};
+    await rosterDoc(CURRENT.schoolId).set({ value:JSON.stringify({classes:d.classes||SS_DATA.classes, students:SS_DATA.students, teacherAdd:d.teacherAdd!==false}), updatedAt:Date.now(), schoolId:CURRENT.schoolId, base:'roster' });
+    toast('تم حفظ حالات الطلاب');
+  }catch(e){ toast('خطأ: '+e.message); }
+}
 function renderPanel(){
   const c=$('#content');
   if(activeTab==='users')      return renderUsers(c);
@@ -482,6 +588,8 @@ function renderPanel(){
   if(activeTab==='classes')    return renderClasses(c);
   if(activeTab==='sent')       return renderSent(c);
   if(activeTab==='received')   return renderReceived(c);
+  if(activeTab==='absence')    return renderAbsence(c);
+  if(activeTab==='studentStatus') return renderStudentStatus(c);
   const labels={classes:'الفصول والطلاب',sent:'الملاحظات المرسلة',received:'الملاحظات الواردة',absence:'غياب الطلاب'};
   c.innerHTML=`<div class="panel-head"><h2>${esc(labels[activeTab]||'')}</h2></div>
     <div class="empty"><span class="e-emoji">🚧</span>هذا التبويب قيد التطوير في المرحلة القادمة.</div>`;
@@ -765,6 +873,7 @@ async function loadRoster(){
   }catch(e){ RClasses=[];RStudents=[]; }
   const hasC=RClasses.length>0;
   RUI={ ed:{teacherAdd:!hasC, noor:!hasC, manual:!hasC, paste:!hasC}, openStage:null, openClass:null };
+  await loadAbsenceCounts();
   paintClasses();
 }
 async function saveRoster(){
@@ -838,11 +947,17 @@ function groupStages(){
   return stages;
 }
 function studentRowR(s,canDel,canEdit){
-  return '<div style="display:flex;gap:6px;align-items:center;padding:7px 4px;border-top:1px solid var(--line)">'+
-    '<span style="font-family:monospace;color:var(--muted);font-size:12.5px;min-width:90px">'+esc(s.seat||'—')+'</span>'+
-    '<span style="flex:1;font-size:14px">'+esc(s.name)+'</span>'+
-    (canEdit?'<button class="icon-btn" onclick="moveStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')" title="نقل">↔️</button>':'')+
-    (canDel?'<button class="icon-btn del" onclick="delStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')" title="حذف">✕</button>':'')+
+  const canAbs = can('index.absence','edit');
+  const days = (RABS && RABS[s.seat]) || 0;
+  const meta = '<div class="umeta" style="font-size:11.5px;margin-top:2px">الحالة الاجتماعية: '+esc(s.social||'—')+' · الصحة: '+esc(s.health||'—')+' · عدد الغياب: '+days+'</div>';
+  return '<div style="padding:7px 4px;border-top:1px solid var(--line)">'+
+    '<div style="display:flex;gap:6px;align-items:center">'+
+      '<span style="font-family:monospace;color:var(--muted);font-size:12.5px;min-width:90px">'+esc(s.seat||'—')+'</span>'+
+      '<span style="flex:1;font-size:14px">'+esc(s.name)+'</span>'+
+      (canAbs?'<button class="icon-btn" onclick="markAbsentFromClasses(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')" title="تغييب اليوم">🔴</button>':'')+
+      (canEdit?'<button class="icon-btn" onclick="moveStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')" title="نقل">↔️</button>':'')+
+      (canDel?'<button class="icon-btn del" onclick="delStudent(\''+esc(s.seat)+'\',\''+esc(s.classCode)+'\')" title="حذف">✕</button>':'')+
+    '</div>'+meta+
   '</div>';
 }
 function renderStagesHtml(canDel,canEdit){

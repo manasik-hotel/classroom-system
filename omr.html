@@ -1968,6 +1968,24 @@ function openAttMenu(seat){
   window.scrollTo(0, y);   // حافظ على موضع التمرير
 }
 function closeAttMenu(){ state.attMenuSeat = null; const y=window.scrollY; renderStudents(); window.scrollTo(0,y); }
+function omrAttInWindow(){ const n=new Date(); const m=n.getHours()*60+n.getMinutes(); return m>=460 && m<600; } // 7:40–10:00 صباحاً
+function omrAttDateKey(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function omrAttDocId(seat,dk){ return 'att_'+CLS_SESSION.schoolId+'_'+CLS_SESSION.period+'_'+seat+'_'+dk; }
+async function omrPushAbsent(seat, stu){
+  if(!CLS_SESSION || !CLS_SESSION.schoolId) return;
+  if(!omrAttInWindow()) return;   // اعتماد التغيب فقط بين 7:40 و10:00 صباحاً
+  try{
+    const dk=omrAttDateKey();
+    await db.collection('attendance').doc(omrAttDocId(seat,dk)).set({
+      schoolId:CLS_SESSION.schoolId, period:CLS_SESSION.period, seat:String(seat), name:stu.name||'',
+      classCode:String(stu.classCode||''), className:classNameByCode(stu.classCode)||'', date:dk, status:'absent',
+      markedBy:CLS_SESSION.userId, markedByName:CLS_SESSION.username, ts:Date.now() }, {merge:true});
+  }catch(e){}
+}
+async function omrRemoveAbsent(seat){
+  if(!CLS_SESSION || !CLS_SESSION.schoolId) return;
+  try{ const dk=omrAttDateKey(); await db.collection('attendance').doc(omrAttDocId(seat,dk)).delete(); }catch(e){}
+}
 function setAttendance(seat,status){
   if(!clsGuardEdit()) return;
   const noteEl = document.getElementById('attNote');
@@ -1982,6 +2000,8 @@ function setAttendance(seat,status){
   } else {
     state.attendance[seat] = { status, note, ts: Date.now() };
   }
+  const _stu = findStudent(seat);
+  if(_stu){ if(status==='absent') omrPushAbsent(seat,_stu); else if(status==='present') omrRemoveAbsent(seat); }
   state.attMenuSeat = null;
   const y = window.scrollY;
   renderStudents();
@@ -2472,6 +2492,7 @@ function openStudentRecord(seat){
   const body = document.getElementById('stRecordBody');
   body.innerHTML = `<div style="text-align:right;font-weight:800;font-size:16px">${escapeHtml(s.name)}</div>
     <div style="text-align:right;font-size:12px;color:var(--muted);margin-bottom:6px">رقم الهوية: ${escapeHtml(seat)} · الصف: ${escapeHtml(classNameByCode(s.classCode)||'—')}</div>
+    ${(function(){ const st=CLS_STU_STATUS[String(seat)]||{}; return '<div style="background:#f6f8f8;border:1px solid #e5eaea;border-radius:10px;padding:8px 10px;margin:0 0 8px;text-align:right;font-size:12.5px"><div>الحالة الاجتماعية: <b>'+escapeHtml(st.social||'—')+'</b></div><div>الصحة: <b>'+escapeHtml(st.health||'—')+'</b></div></div>'; })()}
     ${section('🔴 الغيابات','var(--bad)', byStatus('absent'))}
     ${section('🟠 التأخّرات','var(--warn)', byStatus('late'))}
     ${section('🟢 الاستئذان','var(--ok)', byStatus('excused'))}
@@ -3686,7 +3707,7 @@ const firebaseConfig = {
 let db = null, cloudReady = false, rosterLoaded = false;
 
 /* ===== ربط النظام: حارس الدخول + عزل البيانات حسب المدرسة/الفترة/المستخدم ===== */
-let CLS_SESSION = null, CLS_NS = '', CLS_TEACHER_ADD = true, CLS_OMR_PERM = {view:true,edit:true,del:true};
+let CLS_SESSION = null, CLS_NS = '', CLS_TEACHER_ADD = true, CLS_OMR_PERM = {view:true,edit:true,del:true}, CLS_STU_STATUS = {};
 (function clsAuthGuard(){
   try{ CLS_SESSION = JSON.parse(localStorage.getItem('cls_session')||'null'); }catch(e){ CLS_SESSION = null; }
   if(!CLS_SESSION || !CLS_SESSION.userId){
@@ -3882,6 +3903,7 @@ async function clsProvisionFromSchool(){
     const d = JSON.parse(snap.data().value||'{}');
     const mClasses = Array.isArray(d.classes)?d.classes:[];
     const mStudents = Array.isArray(d.students)?d.students:[];
+    mStudents.forEach(ms=>{ if(ms.seat) CLS_STU_STATUS[String(ms.seat)]={social:ms.social||'',health:ms.health||''}; });
     let changed=false;
     assigned.forEach(code=>{
       const mc = mClasses.find(c=>norm(c.code)===code); if(!mc) return;
