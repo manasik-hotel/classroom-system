@@ -132,6 +132,24 @@ input,select{font-family:inherit;font-size:15px}
 .loading{display:flex;align-items:center;justify-content:center;min-height:100vh;color:var(--muted);font-size:15px}
 .spin{width:22px;height:22px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .7s linear infinite;margin-left:10px}
 @keyframes sp{to{transform:rotate(360deg)}}
+.m-grab{width:42px;height:4px;border-radius:99px;background:var(--line);margin:-4px auto 16px}
+.m-head{display:flex;align-items:center;gap:14px;padding-bottom:16px;margin-bottom:14px;border-bottom:1px solid var(--line)}
+.m-av{width:56px;height:56px;border-radius:17px;background:linear-gradient(150deg,var(--brand),var(--brand-2));color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:24px;flex-shrink:0}
+.m-id{flex:1;min-width:0}
+.m-id .nm{font-weight:800;font-size:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.m-id .sb{color:var(--muted);font-size:13px;margin-top:2px}
+.m-chip{display:inline-block;margin-top:7px;background:var(--surface-2);border:1px solid var(--line);color:var(--brand);padding:3px 11px;border-radius:20px;font-size:11.5px;font-weight:700}
+.m-row{display:flex;align-items:center;gap:13px;width:100%;padding:13px;border-radius:15px;background:var(--surface-2);border:1px solid var(--line);margin-bottom:10px;font-family:inherit;text-align:right;transition:transform .1s,filter .12s;color:var(--ink)}
+.m-row:active{transform:scale(.985)}
+.m-row .mi{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;background:#fff;border:1px solid var(--line)}
+.m-row .ml{flex:1;font-weight:700;font-size:15px}
+.m-row .mc{color:var(--muted);font-size:20px;line-height:1}
+.m-row.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.m-row.primary .mi{background:rgba(255,255,255,.18);border-color:transparent}
+.m-row.primary .mc{color:rgba(255,255,255,.85)}
+.m-row.danger{background:#FCECEA;border-color:#F2D4D0;color:var(--danger-d)}
+.m-row.danger .mi{background:#fff;border-color:#F2D4D0}
+.m-close{display:block;width:100%;text-align:center;color:var(--muted);background:transparent;padding:12px;font-weight:600;font-size:14px;margin-top:2px}
 </style>
 </head>
 <body>
@@ -243,11 +261,21 @@ const ALL_PERM_KEYS = PERM_TREE.flatMap(g=>g.leaves.map(l=>l.key));
 /* القوالب الافتراضية للصلاحيات حسب الدور */
 function defaultPerms(role){
   const p = {}; ALL_PERM_KEYS.forEach(k=>p[k]={access:false,edit:false,del:false});
-  const grant=(k,e,d)=>{ if(p[k]) p[k]={access:true,edit:!!e,del:!!d}; };
-  if(role==='admin'){ ALL_PERM_KEYS.forEach(k=>p[k]={access:true,edit:true,del:true}); }
-  else if(role==='teacher'){ ['omr.classes','omr.classes.manual','omr.classes.noor','omr.design','omr.grade','omr.results','omr.worklog'].forEach(k=>grant(k,true,true)); }
-  else if(role==='agent'||role==='counselor'){ ['index.classes','index.sent','index.received','index.absence'].forEach(k=>grant(k,true,false)); }
-  // مدير / مساعد إداري: بلا صلاحيات افتراضية (تُسند يدوياً)
+  const set=(k,a,e,d)=>{ if(p[k]) p[k]={access:!!a,edit:!!e,del:!!d}; };
+  if(role==='admin'){ ALL_PERM_KEYS.forEach(k=>p[k]={access:true,edit:true,del:true}); return p; }
+  if(role==='manager'){            // الرئيسية كاملة عدا المستخدمون/الإعدادات — مشاهدة فقط
+    ['index.classes','index.sent','index.received','index.absence'].forEach(k=>set(k,true,false,false));
+  } else if(role==='agent'){        // وكيل: وصول+تعديل (المرسلة، الواردة، الغياب)
+    ['index.sent','index.received','index.absence'].forEach(k=>set(k,true,true,false));
+  } else if(role==='counselor'){    // موجه: وصول+تعديل (المرسلة، الواردة) + مشاهدة (الغياب)
+    ['index.sent','index.received'].forEach(k=>set(k,true,true,false));
+    set('index.absence',true,false,false);
+  } else if(role==='assistant'){    // مساعد إداري: وصول+تعديل (الفصول والطلاب، الغياب)
+    ['index.classes','index.absence'].forEach(k=>set(k,true,true,false));
+  } else if(role==='teacher'){      // معلم: المرسلة/الواردة + صفحة التصحيح كاملة
+    ['index.sent','index.received'].forEach(k=>set(k,true,true,false));
+    ['omr.classes','omr.classes.manual','omr.classes.noor','omr.design','omr.grade','omr.results','omr.worklog'].forEach(k=>set(k,true,true,true));
+  }
   return p;
 }
 
@@ -417,18 +445,20 @@ function renderTabs(){
 }
 $('#tbMenu').onclick = openMenu;
 function openMenu(){
-  modal(`<h2>القائمة</h2>
-    <div class="card" style="margin:0 0 10px"><div class="urow">
-      <div class="uavatar">${esc((CURRENT.username||'?')[0])}</div>
-      <div class="uinfo"><div class="uname">${esc(CURRENT.username)}</div>
-      <div class="umeta">${esc(ROLES[CURRENT.role]||CURRENT.role)} · ${esc(periodLabel(SESSION.period))}</div></div>
-    </div></div>
-    <button class="btn secondary" id="mPw" style="margin-bottom:8px">تغيير كلمة المرور</button>
-    <button class="btn" id="mOmr" style="margin-bottom:8px">الانتقال إلى صفحة التصحيح (omr)</button>
-    <button class="btn danger" id="mOut">تسجيل الخروج</button>
-    <button class="btn ghost" style="margin:10px auto 0;display:block" onclick="closeModal()">إغلاق</button>`);
+  const school = CURRENT.schoolId && SCHOOLS[CURRENT.schoolId] ? SCHOOLS[CURRENT.schoolId].name : 'كل المدارس';
+  const omrKeys=['omr.classes','omr.design','omr.grade','omr.results','omr.worklog'];
+  const showOmr = CURRENT.role==='admin' || omrKeys.some(k=>can(k,'access'));
+  modal('<div class="m-grab"></div>'+
+    '<div class="m-head"><div class="m-av">'+esc((CURRENT.username||'?')[0])+'</div>'+
+      '<div class="m-id"><div class="nm">'+esc(CURRENT.username)+'</div>'+
+      '<div class="sb">'+esc(ROLES[CURRENT.role]||CURRENT.role)+' · '+esc(school)+'</div>'+
+      '<span class="m-chip">'+esc(periodLabel(SESSION.period))+'</span></div></div>'+
+    '<button class="m-row" id="mPw"><span class="mi">🔑</span><span class="ml">تغيير كلمة المرور</span><span class="mc">‹</span></button>'+
+    (showOmr?'<button class="m-row primary" id="mOmr"><span class="mi">📝</span><span class="ml">صفحة التصحيح الآلي</span><span class="mc">‹</span></button>':'')+
+    '<button class="m-row danger" id="mOut"><span class="mi">⏻</span><span class="ml">تسجيل الخروج</span><span class="mc">‹</span></button>'+
+    '<button class="m-close" onclick="closeModal()">إغلاق</button>');
   $('#mPw').onclick=()=>{ closeModal(); openChangePw(false); };
-  $('#mOmr').onclick=()=>{ window.location.href='omr.html'; };
+  if($('#mOmr')) $('#mOmr').onclick=()=>{ window.location.href='omr.html'; };
   $('#mOut').onclick=()=>{ closeModal(); logout(); };
 }
 
@@ -440,6 +470,8 @@ function renderPanel(){
   if(activeTab==='users')      return renderUsers(c);
   if(activeTab==='settings')   return renderSettings(c);
   if(activeTab==='classes')    return renderClasses(c);
+  if(activeTab==='sent')       return renderSent(c);
+  if(activeTab==='received')   return renderReceived(c);
   const labels={classes:'الفصول والطلاب',sent:'الملاحظات المرسلة',received:'الملاحظات الواردة',absence:'غياب الطلاب'};
   c.innerHTML=`<div class="panel-head"><h2>${esc(labels[activeTab]||'')}</h2></div>
     <div class="empty"><span class="e-emoji">🚧</span>هذا التبويب قيد التطوير في المرحلة القادمة.</div>`;
@@ -795,19 +827,32 @@ function pasteImport(){
   const code=$('#rPasteCl').value; if(!code){ toast('اختر الفصل أولاً'); return; }
   const lines=($('#rPaste').value||'').split('\n').map(l=>l.trim()).filter(Boolean);
   let n=0;
+  const dups=[];
   lines.forEach(line=>{
     const m=normalizeDigits(line).match(/(\d{6,})/);
     const seat=m?m[1]:'';
     const name=cleanCell(normalizeDigits(line).replace(/\d{6,}/,''));
     if(!name||name.length<3) return;
-    upsertStudentR({seat,name,classCode:code}); n++;
+    const r=upsertStudentR({seat,name,classCode:code});
+    if(r.status==='dup') dups.push({name,seat,cls:clsName(r.dupClass)}); else n++;
   });
-  if(n){ saveRoster().then(()=>{ paintClasses(); toast('استُورد '+n+' طالب'); }); }
+  if(n||dups.length){ saveRoster().then(()=>{ paintClasses(); if(dups.length) alertDupes(dups,n); else toast('استُورد '+n+' طالب'); }); $('#rPaste').value=''; }
   else toast('لم يُعثر على أسماء صالحة');
 }
 function upsertStudentR(st){
-  if(st.seat){ const i=RStudents.findIndex(x=>x.seat===st.seat&&x.classCode===st.classCode); if(i>=0){ RStudents[i]={...RStudents[i],...st}; return; } }
-  RStudents.push(st);
+  if(st.seat){
+    const ex=RStudents.find(x=>x.seat===st.seat);
+    if(ex){
+      if(String(ex.classCode)===String(st.classCode)){ ex.name=st.name; return {status:'updated'}; }
+      return {status:'dup', dupClass:ex.classCode};   // موجود في صف آخر
+    }
+  }
+  RStudents.push(st); return {status:'added'};
+}
+function clsName(code){ return (RClasses.find(c=>String(c.code)===String(code))||{}).name||code; }
+function alertDupes(dups, added){
+  const list=dups.slice(0,60).map(d=>'<div style="padding:5px 0;border-top:1px solid var(--line);font-size:13px"><b>'+esc(d.name)+'</b> ('+esc(d.seat||'')+') — موجود مسبقاً في: <b>'+esc(d.cls)+'</b></div>').join('');
+  modal('<h2>تنبيه: طلاب مكرّرون</h2><p style="color:var(--muted);margin:0 0 8px">لا يمكن وجود الطالب في أكثر من صف (رقم الهوية مفتاح فريد). تم تجاهل '+dups.length+' طالباً، وأُضيف '+added+'.</p><div style="max-height:42vh;overflow:auto">'+list+'</div><button class="btn" style="margin-top:12px" onclick="closeModal()">حسناً</button>');
 }
 async function delClass(code){
   confirmModal('حذف فصل','سيُحذف الفصل وكل طلابه من روستر المدرسة. متابعة؟',async()=>{
@@ -853,14 +898,18 @@ function showImpReview(){
   $('#rImpConfirm').onclick=confirmImpReview;
 }
 async function confirmImpReview(){
-  let total=0;
+  let total=0; const dups=[];
   pendingGroups.forEach((g,i)=>{
     const code=(($('#rgc-'+i)||{}).value||'').trim(); if(!code) return;
-    if(!RClasses.some(c=>c.code===code)) RClasses.push({name:g.className,code});
-    g.students.forEach(st=>{ upsertStudentR({seat:st.seat,name:st.name,classCode:code}); total++; });
+    if(!RClasses.some(c=>String(c.code)===String(code))) RClasses.push({name:g.className,code});
+    g.students.forEach(st=>{
+      const r=upsertStudentR({seat:st.seat,name:st.name,classCode:code});
+      if(r.status==='dup') dups.push({name:st.name,seat:st.seat,cls:clsName(r.dupClass)}); else total++;
+    });
   });
-  if(!total){ toast('أدخل رمز الفصل'); return; }
-  await saveRoster(); pendingGroups=null; paintClasses(); toast('استُورد '+total+' طالب');
+  if(!total && !dups.length){ toast('أدخل رمز الفصل'); return; }
+  await saveRoster(); pendingGroups=null; paintClasses();
+  if(dups.length) alertDupes(dups,total); else toast('استُورد '+total+' طالب');
 }
 
 /* ---- محلّل نور (منقول حرفياً من omr.html لمطابقة السلوك) ---- */
@@ -939,6 +988,105 @@ function parseExcelRoster(rows){
     students.push({seat,name});
   }
   return { students, grade, section };
+}
+
+/* ========================================================================
+   نظام الملاحظات — المرسلة / الواردة + التوجيه التلقائي
+   ======================================================================== */
+const notesCol = ()=>db.collection('notes');
+const _normN = x=>String(x||'').replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)]).trim();
+
+async function resolveRecipients(opts){
+  const snap = await usersCol().where('schoolId','==',opts.schoolId).get();
+  const users = snap.docs.map(d=>({id:d.id,...d.data()})).filter(u=>u.active!==false && u.id!==CURRENT.id);
+  const hasClass=u=>(u.assignedClasses||[]).map(_normN).includes(_normN(opts.classCode));
+  let recs=[];
+  if(opts.kind==='toTeacher') recs=users.filter(u=>u.role==='teacher'&&hasClass(u));
+  else if(opts.kind==='toPeers'){ const other=opts.fromRole==='agent'?'counselor':'agent'; recs=users.filter(u=>u.role===other); }
+  return recs.map(u=>({userId:u.id,name:u.username,role:u.role}));
+}
+async function createNote(n){
+  const info=await resolveRecipients(n);
+  if(!info.length) throw new Error('لا يوجد مستقبِل مؤهّل لهذه الملاحظة.');
+  await notesCol().add({ schoolId:CURRENT.schoolId, period:SESSION.period,
+    fromUserId:CURRENT.id, fromName:CURRENT.username, fromRole:CURRENT.role,
+    recipients:info.map(r=>r.userId), recipientsInfo:info,
+    scope:n.scope, studentSeat:n.studentSeat||'', studentName:n.studentName||'',
+    classCode:n.classCode||'', className:n.className||'', text:n.text,
+    createdAt:Date.now(), replies:[] });
+}
+function noteCard(n, mineSent){
+  const who = mineSent
+    ? ('إلى: '+(n.recipientsInfo||[]).map(r=>esc(r.name)+' ('+(ROLES[r.role]||r.role)+')').join('، '))
+    : ('من: '+esc(n.fromName)+' ('+(ROLES[n.fromRole]||n.fromRole)+')');
+  const stu = (n.studentName||n.studentSeat) ? '<div class="umeta">بخصوص: '+esc(n.studentName||'')+(n.className?(' · '+esc(n.className)):'')+'</div>' : '';
+  const reps=(n.replies||[]).map(r=>'<div style="border-top:1px solid var(--line);padding:6px 0;font-size:13px"><b>'+esc(r.fromName)+':</b> '+esc(r.text)+'</div>').join('');
+  return '<div class="card"><div class="uinfo"><div class="uname" style="font-size:14px">'+who+'</div>'+stu+
+    '<div style="margin:8px 0;font-size:14.5px;white-space:pre-wrap">'+esc(n.text)+'</div>'+
+    '<div class="umeta">'+new Date(n.createdAt).toLocaleString('ar')+'</div>'+
+    (reps?'<div style="margin-top:8px">'+reps+'</div>':'')+
+    '<button class="btn ghost" style="margin-top:6px" onclick="replyNote(\''+n.id+'\')">↩︎ رد</button></div></div>';
+}
+async function replyNote(id){
+  if(!can('index.received','edit') && !can('index.sent','edit')){ toast('ليس لديك صلاحية الرد (مشاهدة فقط).'); return; }
+  const txt=prompt('اكتب ردّك:'); if(!txt||!txt.trim()) return;
+  try{
+    await notesCol().doc(id).update({ replies: firebase.firestore.FieldValue.arrayUnion(
+      {fromUserId:CURRENT.id,fromName:CURRENT.username,fromRole:CURRENT.role,text:txt.trim(),at:Date.now()}) });
+    toast('تم إرسال الرد'); (activeTab==='received'?renderReceived:renderSent)($('#content'));
+  }catch(e){ toast('خطأ: '+e.message); }
+}
+async function renderSent(c){
+  const canCompose = (CURRENT.role==='agent'||CURRENT.role==='counselor');
+  c.innerHTML='<div class="panel-head"><h2>الملاحظات المرسلة</h2>'+(canCompose?'<button class="btn sm" id="composeBtn">+ ملاحظة جديدة</button>':'')+'</div><div id="notesList"><div class="empty"><span class="spin"></span></div></div>';
+  if($('#composeBtn')) $('#composeBtn').onclick=openCompose;
+  try{
+    const snap=await notesCol().where('fromUserId','==',CURRENT.id).get();
+    let arr=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>n.period===SESSION.period).sort((a,b)=>b.createdAt-a.createdAt);
+    $('#notesList').innerHTML = arr.length? arr.map(n=>noteCard(n,true)).join('') : '<div class="empty"><span class="e-emoji">📤</span>لا ملاحظات مرسلة.</div>';
+  }catch(e){ $('#notesList').innerHTML='<div class="alert err">'+esc(e.message)+'</div>'; }
+}
+async function renderReceived(c){
+  c.innerHTML='<div class="panel-head"><h2>الملاحظات الواردة</h2></div><div id="notesList"><div class="empty"><span class="spin"></span></div></div>';
+  try{
+    const snap=await notesCol().where('recipients','array-contains',CURRENT.id).get();
+    let arr=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>n.period===SESSION.period).sort((a,b)=>b.createdAt-a.createdAt);
+    $('#notesList').innerHTML = arr.length? arr.map(n=>noteCard(n,false)).join('') : '<div class="empty"><span class="e-emoji">📥</span>لا ملاحظات واردة.</div>';
+  }catch(e){ $('#notesList').innerHTML='<div class="alert err">'+esc(e.message)+'</div>'; }
+}
+let composeRoster={classes:[],students:[]};
+async function openCompose(){
+  try{ const s=await rosterDoc(CURRENT.schoolId).get(); const d=s.exists?JSON.parse(s.data().value||'{}'):{}; composeRoster={classes:d.classes||[],students:d.students||[]}; }
+  catch(e){ composeRoster={classes:[],students:[]}; }
+  const peerLabel = CURRENT.role==='agent' ? 'الموجّهين الطلابيين' : 'الوكلاء';
+  modal('<h2>ملاحظة جديدة</h2><div id="cmpAlert"></div>'+
+    '<div class="field"><label>نوع الملاحظة</label><select id="cmpKind">'+
+      '<option value="toTeacher">عن طالب → إلى معلّمه</option>'+
+      '<option value="toPeers">عامة → إلى '+esc(peerLabel)+'</option></select></div>'+
+    '<div id="cmpStudentWrap">'+
+      '<div class="field"><label>الفصل</label><select id="cmpClass"><option value="">— اختر —</option>'+composeRoster.classes.map(c=>'<option value="'+esc(c.code)+'">'+esc(c.name)+'</option>').join('')+'</select></div>'+
+      '<div class="field"><label>الطالب</label><select id="cmpStudent"><option value="">— اختر الفصل أولاً —</option></select></div></div>'+
+    '<div class="field"><label>نص الملاحظة</label><textarea id="cmpText" rows="4" style="width:100%;padding:12px;border:1.5px solid var(--line);border-radius:11px;background:var(--surface-2);font-family:inherit"></textarea></div>'+
+    '<div class="modal-row"><button class="btn secondary" onclick="closeModal()">إلغاء</button><button class="btn" id="cmpSend">إرسال</button></div>');
+  const upd=()=>{ $('#cmpStudentWrap').style.display = $('#cmpKind').value==='toTeacher'?'block':'none'; };
+  $('#cmpKind').onchange=upd; upd();
+  $('#cmpClass').onchange=()=>{ const code=$('#cmpClass').value; const studs=composeRoster.students.filter(s=>String(s.classCode)===String(code));
+    $('#cmpStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+esc(s.seat)+'">'+esc(s.name)+'</option>').join(''); };
+  $('#cmpSend').onclick=doCompose;
+}
+async function doCompose(){
+  const kind=$('#cmpKind').value, text=($('#cmpText').value||'').trim();
+  if(!text){ alertBox('cmpAlert','err','اكتب نص الملاحظة'); return; }
+  const payload={kind, scope:kind==='toPeers'?'peers':'student', fromRole:CURRENT.role, schoolId:CURRENT.schoolId, text};
+  if(kind==='toTeacher'){
+    const code=$('#cmpClass').value, seat=$('#cmpStudent').value;
+    if(!code||!seat){ alertBox('cmpAlert','err','اختر الفصل والطالب'); return; }
+    const cl=composeRoster.classes.find(c=>String(c.code)===String(code))||{};
+    const st=composeRoster.students.find(s=>String(s.seat)===String(seat)&&String(s.classCode)===String(code))||{};
+    payload.classCode=code; payload.className=cl.name||''; payload.studentSeat=seat; payload.studentName=st.name||'';
+  }
+  try{ await createNote(payload); closeModal(); toast('تم الإرسال'); renderSent($('#content')); }
+  catch(e){ alertBox('cmpAlert','err',e.message); }
 }
 
 boot();

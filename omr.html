@@ -151,6 +151,7 @@
     <button id="tab-grade" onclick="showTab('grade')">📷 التصحيح</button>
     <button id="tab-results" onclick="showTab('results')">📊 النتائج</button>
     <button id="tab-cloud" onclick="showTab('cloud')">💼 سجل الأعمال</button>
+    <button id="tab-notes" onclick="showTab('notes')">📨 الملاحظات</button>
   </nav>
 </header>
 
@@ -468,6 +469,11 @@
       </div>
       <button class="ghost no-print" style="width:100%;margin-top:8px" onclick="openExportDialog('detailed')">📋 تصدير مفصّل (كل المحاولات — فترة واحدة)</button>
     </div>
+  </section>
+
+  <!-- ================= NOTES ================= -->
+  <section id="panel-notes" class="panel">
+    <div class="card"><div id="omrNotesHost">…</div></div>
   </section>
   </main>
 
@@ -1428,6 +1434,7 @@ function addClass(){
   refreshClassDropdowns(); renderClasses(); renderStudents(); saveStudentsToCloud();
 }
 function delClass(code){
+  if(!clsGuardDel()) return;
   const studs = state.students.filter(s=>s.classCode===code);
   const cl = state.classes.find(c=>c.code===code);
   const msg = studs.length>0
@@ -1492,7 +1499,8 @@ function addStudentManual(){
   if(!seat || normalizeSeat(rawId)!==rawId.replace(/[٠-٩]/g,d=>'0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])){
     alert('رقم الهوية يجب أن يكون أرقاماً فقط بلا حروف أو رموز.'); return;
   }
-  upsertStudent({ seat, name, classCode });
+  const r = upsertStudent({ seat, name, classCode });
+  if(r.status==='dup'){ alert('هذا الطالب (رقم الهوية '+seat+') مسجّل مسبقاً في صف: '+clsNameOmr(r.dupClass)+'.\nلا يمكن وجود الطالب في أكثر من صف.'); return; }
   document.getElementById('stName').value=''; document.getElementById('stSeat').value='';
   renderStudents(); saveStudentsToCloud();
 }
@@ -1503,7 +1511,7 @@ function importStudents(){
   if(!classCode){ alert('اختر الصف أولاً قبل الاستيراد.'); return; }
   const txt = document.getElementById('stBulk').value||'';
   const lines = txt.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  let added=0;
+  let added=0; const dups=[];
   for(const line of lines){
     const parts = line.split(/[,،\t]/).map(p=>p.trim());
     if(!parts.length) continue;
@@ -1513,11 +1521,14 @@ function importStudents(){
     else { name = parts[0]; }
     if(!name) continue;
     if(!seat) seat = nextAutoSeat(classCode);   // توليد تلقائي عند غياب الهوية
-    upsertStudent({ seat, name, classCode }); added++;
+    const r = upsertStudent({ seat, name, classCode });
+    if(r.status==='dup') dups.push({name, cls:clsNameOmr(r.dupClass)}); else added++;
   }
   document.getElementById('stBulk').value='';
   renderStudents(); saveStudentsToCloud();
-  alert(`تم استيراد/تحديث ${toArabic(added)} طالب في الصف.`);
+  let msg = `تم استيراد/تحديث ${toArabic(added)} طالب في الصف.`;
+  if(dups.length){ msg += `\n\nتم تجاهل ${toArabic(dups.length)} طالباً موجوداً مسبقاً في صف آخر:\n`+dups.slice(0,30).map(d=>'• '+d.name+' → '+d.cls).join('\n'); }
+  alert(msg);
 }
 // استيراد من ملف Excel/CSV — اكتشاف عمودَي الهوية والاسم (والصف إن وُجد) تلقائياً
 function onXlsxChosen(ev){
@@ -1658,9 +1669,14 @@ function parseExcelRoster(rows){
   return { students, byClass, grade, section };
 }
 function upsertStudent(st){
-  const i = state.students.findIndex(s=>s.seat===st.seat);
-  if(i>=0) state.students[i] = { ...state.students[i], ...st }; else state.students.push(st);
+  const ex = state.students.find(s=>s.seat===st.seat);
+  if(ex){
+    if(String(ex.classCode)===String(st.classCode)){ Object.assign(ex, st); return {status:'updated'}; }
+    return {status:'dup', dupClass:ex.classCode};   // موجود في صف آخر — لا يُنقل تلقائياً
+  }
+  state.students.push(st); return {status:'added'};
 }
+function clsNameOmr(code){ return (state.classes.find(c=>String(c.code)===String(code))||{}).name||code; }
 
 /* ============================================================
    استيراد من نور (PDF) — استخراج الهوية/الاسم/الصف ثم طلب رمز الصف
@@ -1730,7 +1746,7 @@ function confirmImport(){
   // تحقّق التكرار بين الرموز المُدخلة
   const codes = pendingImport.groups.map(g=>g.code);
   if(new Set(codes).size !== codes.length){ alert('هناك رمز صف مكرّر بين الصفوف. اجعل كل رمز فريداً.'); return; }
-  let addedClasses=0, addedStudents=0, updated=0;
+  let addedClasses=0, addedStudents=0, updated=0; const dups=[];
   pendingImport.groups.forEach(g=>{
     let cls = state.classes.find(c=>c.code===g.code);
     if(!cls){
@@ -1743,18 +1759,20 @@ function confirmImport(){
     g.students.forEach(s=>{
       let seat = s.seat;
       if(!seat){ seat = nextAutoSeat(g.code); }   // لا هوية (استيراد بالأسماء) → ترقيم تلقائي
-      const exists = state.students.some(x=>x.seat===seat);
-      upsertStudent({ seat, name:s.name, classCode:g.code });
-      if(exists) updated++; else addedStudents++;
+      const r = upsertStudent({ seat, name:s.name, classCode:g.code });
+      if(r.status==='dup') dups.push({name:s.name, cls:clsNameOmr(r.dupClass)});
+      else if(r.status==='updated') updated++; else addedStudents++;
     });
   });
   refreshClassDropdowns(); renderClasses(); renderStudents(); saveStudentsToCloud();
   closeImportReview();
   let msg = `تم الاستيراد بنجاح ✅\nفصول جديدة: ${toArabic(addedClasses)}\nطلاب جُدد: ${toArabic(addedStudents)}`;
   if(updated) msg += `\nطلاب محدّثون: ${toArabic(updated)}`;
+  if(dups.length){ msg += `\n\nطلاب موجودون مسبقاً في صف آخر (تم تجاهلهم): ${toArabic(dups.length)}\n`+dups.slice(0,30).map(d=>'• '+d.name+' → '+d.cls).join('\n'); }
   alert(msg);
 }
 function delStudent(seat){
+  if(!clsGuardDel()) return;
   if(!confirm('حذف هذا الطالب؟')) return;
   state.students = state.students.filter(s=>s.seat!==seat);
   delete state.selectedStudents[seat];
@@ -1793,6 +1811,7 @@ function updateBulkBar(){
   if(sc) sc.textContent = `${toArabic(sel.length)} محدّد`;
 }
 function bulkMove(){
+  if(!clsGuardEdit()) return;
   const sel=selectedSeats(); if(!sel.length) return;
   if(!state.classes.length){ alert('لا توجد فصول.'); return; }
   const list = state.classes.map((c,i)=>`${i+1}) ${c.name} (${c.code})`).join('\n');
@@ -1880,6 +1899,7 @@ function openAttMenu(seat){
 }
 function closeAttMenu(){ state.attMenuSeat = null; const y=window.scrollY; renderStudents(); window.scrollTo(0,y); }
 function setAttendance(seat,status){
+  if(!clsGuardEdit()) return;
   const noteEl = document.getElementById('attNote');
   const note = noteEl ? (noteEl.value||'').trim() : '';
   if(status==='present'){
@@ -3435,14 +3455,87 @@ function toArabic(n){return String(n).replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d]
 /* ============================================================
    التبويبات
    ============================================================ */
+/* ============================================================
+   نظام الملاحظات — جانب المعلم
+   ============================================================ */
+const OROLES={admin:'أدمن',manager:'مدير',agent:'وكيل',counselor:'موجه طلابي',assistant:'مساعد إداري',teacher:'معلم'};
+async function omrResolveClassAdmins(classCode){
+  const norm=x=>normalizeDigits(String(x||'')).trim();
+  const snap=await db.collection('users').where('schoolId','==',CLS_SESSION.schoolId).get();
+  return snap.docs.map(d=>({id:d.id,...d.data()}))
+    .filter(u=>u.active!==false && (u.role==='agent'||u.role==='counselor') && (u.assignedClasses||[]).map(norm).includes(norm(classCode)))
+    .map(u=>({userId:u.id,name:u.username,role:u.role}));
+}
+async function omrSendNote(seat,classCode,className,studentName,text){
+  try{
+    const info=await omrResolveClassAdmins(classCode);
+    if(!info.length){ alert('لا يوجد وكيل أو موجه مرتبط بهذا الفصل.'); return; }
+    await db.collection('notes').add({ schoolId:CLS_SESSION.schoolId, period:CLS_SESSION.period,
+      fromUserId:CLS_SESSION.userId, fromName:CLS_SESSION.username, fromRole:'teacher',
+      recipients:info.map(r=>r.userId), recipientsInfo:info, scope:'student',
+      studentSeat:seat, studentName:studentName, classCode:classCode, className:className,
+      text:text, createdAt:Date.now(), replies:[] });
+    alert('تم إرسال الملاحظة إلى '+info.length+' مستقبِل.'); renderOmrNotes();
+  }catch(e){ alert('فشل الإرسال: '+e.message); }
+}
+async function omrReplyNote(id){
+  const t=prompt('اكتب ردّك:'); if(!t||!t.trim()) return;
+  try{
+    await db.collection('notes').doc(id).update({ replies: firebase.firestore.FieldValue.arrayUnion(
+      {fromUserId:CLS_SESSION.userId,fromName:CLS_SESSION.username,fromRole:'teacher',text:t.trim(),at:Date.now()}) });
+    renderOmrNotes();
+  }catch(e){ alert('تعذّر الرد: '+e.message); }
+}
+function omrNoteCard(n,mineSent){
+  const who=mineSent?('إلى: '+(n.recipientsInfo||[]).map(r=>escapeHtml(r.name)).join('، ')):('من: '+escapeHtml(n.fromName)+' ('+(OROLES[n.fromRole]||n.fromRole)+')');
+  const stu=(n.studentName?('<div class="sub">بخصوص: '+escapeHtml(n.studentName)+(n.className?(' · '+escapeHtml(n.className)):'')+'</div>'):'');
+  const reps=(n.replies||[]).map(r=>'<div style="border-top:1px solid var(--line);padding:5px 0;font-size:13px"><b>'+escapeHtml(r.fromName)+':</b> '+escapeHtml(r.text)+'</div>').join('');
+  return '<div class="subcard"><div style="font-weight:700">'+who+'</div>'+stu+'<div style="margin:6px 0;white-space:pre-wrap">'+escapeHtml(n.text)+'</div>'+(reps||'')+'<button class="ghost" style="margin-top:4px" onclick="omrReplyNote(\''+n.id+'\')">↩︎ رد</button></div>';
+}
+function omrComposeSend(){
+  const code=document.getElementById('onClass').value, seat=document.getElementById('onStudent').value, text=(document.getElementById('onText').value||'').trim();
+  if(!code||!seat){ alert('اختر الفصل والطالب.'); return; }
+  if(!text){ alert('اكتب نص الملاحظة.'); return; }
+  const cl=state.classes.find(c=>String(c.code)===String(code))||{};
+  const st=state.students.find(s=>String(s.seat)===String(seat)&&String(s.classCode)===String(code))||{};
+  omrSendNote(seat,code,cl.name||'',st.name||'',text);
+}
+async function renderOmrNotes(){
+  const host=document.getElementById('omrNotesHost'); if(!host) return;
+  const classOpts=state.classes.map(c=>'<option value="'+c.code+'">'+escapeHtml(c.name)+'</option>').join('');
+  host.innerHTML=
+    '<div class="subcard"><div class="subtitle">📨 إرسال ملاحظة عن طالب <span class="sub">تُرسل تلقائياً للوكيل/الموجه المرتبط بالفصل</span></div>'+
+    '<label class="field" style="margin-top:6px">الفصل<select id="onClass"><option value="">— اختر —</option>'+classOpts+'</select></label>'+
+    '<label class="field" style="margin-top:8px">الطالب<select id="onStudent"><option value="">— اختر الفصل أولاً —</option></select></label>'+
+    '<label class="field" style="margin-top:8px">نص الملاحظة<textarea id="onText" rows="3" style="width:100%;padding:11px;border:1px solid var(--line);border-radius:10px;font:inherit;background:#fcfdfd"></textarea></label>'+
+    '<button class="primary" style="margin-top:8px" onclick="omrComposeSend()">📨 إرسال</button></div>'+
+    '<div id="omrInbox" style="margin-top:12px"><div class="empty">جارٍ تحميل الملاحظات…</div></div>';
+  const cs=document.getElementById('onClass');
+  if(cs) cs.onchange=function(){ const code=this.value; const studs=state.students.filter(s=>String(s.classCode)===String(code));
+    document.getElementById('onStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+s.seat+'">'+escapeHtml(s.name)+'</option>').join(''); };
+  try{
+    const [recv,sent]=await Promise.all([
+      db.collection('notes').where('recipients','array-contains',CLS_SESSION.userId).get(),
+      db.collection('notes').where('fromUserId','==',CLS_SESSION.userId).get()
+    ]);
+    const mine=p=>p===CLS_SESSION.period;
+    const rec=recv.docs.map(d=>({id:d.id,...d.data()})).filter(n=>mine(n.period)).sort((a,b)=>b.createdAt-a.createdAt);
+    const snt=sent.docs.map(d=>({id:d.id,...d.data()})).filter(n=>mine(n.period)).sort((a,b)=>b.createdAt-a.createdAt);
+    document.getElementById('omrInbox').innerHTML=
+      '<div class="subtitle">📥 الواردة</div>'+(rec.length?rec.map(n=>omrNoteCard(n,false)).join(''):'<div class="empty">لا ملاحظات واردة.</div>')+
+      '<div class="subtitle" style="margin-top:12px">📤 المرسلة</div>'+(snt.length?snt.map(n=>omrNoteCard(n,true)).join(''):'<div class="empty">لا ملاحظات مرسلة.</div>');
+  }catch(e){ document.getElementById('omrInbox').innerHTML='<div class="empty">تعذّر تحميل الملاحظات: '+escapeHtml(e.message)+'</div>'; }
+}
+
 function showTab(t){
-  ['design','students','grade','results','cloud'].forEach(x=>{
+  ['design','students','grade','results','cloud','notes'].forEach(x=>{
     document.getElementById('panel-'+x).classList.toggle('active', x===t);
     document.getElementById('tab-'+x).classList.toggle('active', x===t);
   });
   // عند دخول تبويب الطلاب: كل الأقسام مصغّرة افتراضياً
   if(t==='students') collapseStudentCards();
   if(t==='cloud'){ renderWlHeader(); renderWlSetup(); renderWorkLog(); }
+  if(t==='notes') renderOmrNotes();
 }
 function collapseStudentCards(){
   // طيّ بطاقتَي الإضافة والاستيراد، وإبقاء «طلاب الصف» مفتوحة
@@ -3469,7 +3562,7 @@ const firebaseConfig = {
 let db = null, cloudReady = false, rosterLoaded = false;
 
 /* ===== ربط النظام: حارس الدخول + عزل البيانات حسب المدرسة/الفترة/المستخدم ===== */
-let CLS_SESSION = null, CLS_NS = '', CLS_TEACHER_ADD = true;
+let CLS_SESSION = null, CLS_NS = '', CLS_TEACHER_ADD = true, CLS_OMR_PERM = {view:true,edit:true,del:true};
 (function clsAuthGuard(){
   try{ CLS_SESSION = JSON.parse(localStorage.getItem('cls_session')||'null'); }catch(e){ CLS_SESSION = null; }
   if(!CLS_SESSION || !CLS_SESSION.userId){
@@ -3571,6 +3664,7 @@ function initFirebase(){
     setCloudStatus('ok','✅ متصل بقاعدة البيانات.');
     clsLoadTeacherAdd();
     clsWatchActive();
+    clsLoadPerms();
     loadExamsFromCloud();
     loadResultsFromCloud();
     loadStudentsFromCloud();
@@ -3616,8 +3710,25 @@ function clsApplyTeacherAdd(){
   }catch(e){}
 }
 function clsGuardAdd(){
+  if(CLS_OMR_PERM.edit===false){ alert('ليس لديك صلاحية التعديل في صفحة التصحيح.'); return false; }
   if(CLS_TEACHER_ADD===false){ alert('إضافة الطلاب موقوفة من إدارة المدرسة حالياً.'); return false; }
   return true;
+}
+function clsGuardEdit(){ if(CLS_OMR_PERM.edit===false){ alert('ليس لديك صلاحية التعديل في صفحة التصحيح (مشاهدة فقط).'); return false; } return true; }
+function clsGuardDel(){ if(CLS_OMR_PERM.del===false){ alert('ليس لديك صلاحية الحذف في صفحة التصحيح.'); return false; } return true; }
+async function clsLoadPerms(){
+  try{
+    if(!CLS_SESSION || !CLS_SESSION.userId) return;
+    const snap = await db.collection('users').doc(CLS_SESSION.userId).get();
+    if(!snap.exists) return;
+    const u = snap.data();
+    if(u.role==='admin'){ CLS_OMR_PERM={view:true,edit:true,del:true}; return; }
+    const perm=u.permissions||{};
+    const keys=['omr.classes','omr.classes.manual','omr.classes.noor','omr.design','omr.grade','omr.results','omr.worklog'];
+    const any=fl=>keys.some(k=>perm[k]&&perm[k][fl]);
+    CLS_OMR_PERM={ view:any('access'), edit:any('edit'), del:any('del') };
+    if(!CLS_OMR_PERM.view){ alert('ليس لديك صلاحية الوصول إلى صفحة التصحيح.'); location.replace('index.html'); }
+  }catch(e){}
 }
 /* طرد المستخدم فور تعطيله (أو عند التحديث إن كان معطّلاً) */
 function clsWatchActive(){
@@ -3712,6 +3823,7 @@ function renderExams(){
 let pendingGrade = null;
 function round1(x){ return Math.round((+x||0)*10)/10; }
 function saveGradesToRecord(){
+  if(!clsGuardEdit()) return;
   if(!state.results.length){ alert('لا توجد نتائج لحفظها. صحّح بطاقات أولاً.'); return; }
   const cfg = state.workCfg;
   if(!cfg || !cfg.periods || !cfg.periods.length || cfg.periods.every(p=>!(p.items||[]).length)){
