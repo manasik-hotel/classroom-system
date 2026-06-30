@@ -197,7 +197,7 @@ input,select{font-family:inherit;font-size:15px}
     <span class="tb-badge" id="tbPeriod"></span>
     <button class="tb-icon" id="tbOmr" title="صفحة التصحيح">📝</button>
     <button class="tb-icon" id="tbPw" title="تغيير كلمة المرور">🔑</button>
-    <button class="tb-icon" id="tbOut" title="تسجيل الخروج">⏻</button>
+    <button class="tb-icon" id="tbOut" title="تسجيل الخروج"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v9"/><path d="M6.6 6.8a8 8 0 1 0 10.8 0"/></svg></button>
   </div>
   <div class="tabbar" id="tabbar"></div>
   <div class="content" id="content"></div>
@@ -423,7 +423,7 @@ function visibleTabs(){
 function enterApp(){
   show('appView');
   const school = CURRENT.schoolId && SCHOOLS[CURRENT.schoolId] ? SCHOOLS[CURRENT.schoolId].name : 'لوحة الأدمن';
-  $('#tbTitle').textContent = school;
+  $('#tbTitle').textContent = CURRENT.username;
   $('#tbPeriod').textContent = periodLabel(SESSION.period);
   const _omrKeys=['omr.classes','omr.design','omr.grade','omr.results','omr.worklog'];
   const _ob=$('#tbOmr'); if(_ob) _ob.style.display=(CURRENT.role==='admin'||_omrKeys.some(k=>can(k,'access')))?'flex':'none';
@@ -480,7 +480,7 @@ function openMenu(){
    ======================================================================== */
 /* ======================== غياب الطلاب + حالة الطالب ======================== */
 const attCol = ()=>db.collection('attendance');
-let RABS={}, SS_DATA={classes:[],students:[]};
+let RABS={}, SS_DATA={classes:[],students:[]}, SS_SEL=null, ABS_CACHE=null, ABS_OPEN={};
 function attDateKey(d){ d=d||new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 function attDocIdFor(sid,period,seat,dk){ return 'att_'+sid+'_'+period+'_'+seat+'_'+dk; }
 async function markStudentAbsent(seat,name,classCode,className){
@@ -507,23 +507,53 @@ function markAbsentFromClasses(seat,code){
 }
 async function renderAbsence(c){
   const canEdit=can('index.absence','edit');
-  c.innerHTML='<div class="panel-head"><h2>غياب الطلاب</h2></div><div class="sub-note">يُعتمد التغيب من المعلم بين 7:40 و10:00 صباحاً، أو يدوياً من «الفصول والطلاب».</div><div id="absRoot"><div class="empty"><span class="spin"></span></div></div>';
+  c.innerHTML='<div class="panel-head"><h2>غياب الطلاب</h2></div><div class="sub-note">يُعتمد التغيب من المعلم بين 7:40 و10:00 صباحاً، أو يدوياً من «الفصول والطلاب». اضغط اليوم لطيّ/فتح بطاقته.</div><div id="absRoot"><div class="empty"><span class="spin"></span></div></div>';
   try{
     let q=attCol(); if(CURRENT.schoolId) q=q.where('schoolId','==',CURRENT.schoolId);
     const snap=await q.get();
-    let arr=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>n.period===SESSION.period && n.status && n.status!=='present');
-    const days={}; arr.forEach(a=>{ if(a.status==='absent') days[a.seat]=(days[a.seat]||0)+1; });
-    const byDate={}; arr.forEach(a=>{ (byDate[a.date]=byDate[a.date]||[]).push(a); });
-    const dates=Object.keys(byDate).sort((a,b)=>String(b).localeCompare(String(a)));
-    if(!dates.length){ $('#absRoot').innerHTML='<div class="empty"><span class="e-emoji">✅</span>لا غيابات حالياً.</div>'; return; }
-    const norm=x=>_normN(x);
-    $('#absRoot').innerHTML=dates.map(dt=>{
-      const list=byDate[dt].slice().sort((a,b)=>norm(a.classCode).localeCompare(norm(b.classCode),undefined,{numeric:true}));
-      let title=dt; try{ title=new Date(dt+'T00:00:00').toLocaleDateString('ar',{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){}
-      return '<div class="card"><div class="uname" style="font-size:15px;margin-bottom:10px">📅 '+esc(title)+'</div>'+
-        list.map(a=>absRow(a,days[a.seat]||0,canEdit)).join('')+'</div>';
-    }).join('');
+    const arr=snap.docs.map(d=>({id:d.id,...d.data()})).filter(n=>n.period===SESSION.period && n.status && n.status!=='present');
+    ABS_CACHE={arr,canEdit}; paintAbsence();
   }catch(e){ $('#absRoot').innerHTML='<div class="alert err">'+esc(e.message)+'</div>'; }
+}
+function paintAbsence(){
+  if(!ABS_CACHE){ return; }
+  const {arr,canEdit}=ABS_CACHE;
+  const days={}; arr.forEach(a=>{ if(a.status==='absent') days[a.seat]=(days[a.seat]||0)+1; });
+  const byDate={}; arr.forEach(a=>{ (byDate[a.date]=byDate[a.date]||[]).push(a); });
+  const dates=Object.keys(byDate).sort((a,b)=>String(b).localeCompare(String(a)));
+  const root=$('#absRoot'); if(!root) return;
+  if(!dates.length){ root.innerHTML='<div class="empty"><span class="e-emoji">✅</span>لا غيابات حالياً.</div>'; return; }
+  const norm=x=>_normN(x);
+  root.innerHTML=dates.map(dt=>{
+    const open = ABS_OPEN[dt]!==false;
+    const list=byDate[dt].slice().sort((a,b)=>norm(a.classCode).localeCompare(norm(b.classCode),undefined,{numeric:true}));
+    let title=dt; try{ title=new Date(dt+'T00:00:00').toLocaleDateString('ar',{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){}
+    return '<div class="card" style="padding:0;overflow:hidden">'+
+      '<div style="display:flex;align-items:center;gap:8px;padding:13px 14px;cursor:pointer" onclick="toggleAbsDay(\''+dt+'\')">'+
+        '<div class="uname" style="flex:1;text-align:right;font-size:15px">📅 '+esc(title)+' <span class="umeta">('+list.length+')</span></div>'+
+        '<span style="color:var(--muted);font-size:18px">'+(open?'▴':'▾')+'</span>'+
+        '<button class="btn ghost sm" onclick="event.stopPropagation();printAbsDay(\''+dt+'\')" title="طباعة PDF">🖨️ PDF</button>'+
+      '</div>'+
+      (open?'<div style="padding:0 12px 12px">'+list.map(a=>absRow(a,days[a.seat]||0,canEdit)).join('')+'</div>':'')+
+    '</div>';
+  }).join('');
+}
+function toggleAbsDay(dt){ const open=ABS_OPEN[dt]!==false; ABS_OPEN[dt]=!open; paintAbsence(); }
+function printAbsDay(dt){
+  if(!ABS_CACHE) return;
+  const norm=x=>_normN(x);
+  const list=ABS_CACHE.arr.filter(a=>a.date===dt).sort((a,b)=>norm(a.classCode).localeCompare(norm(b.classCode),undefined,{numeric:true}));
+  const days={}; ABS_CACHE.arr.forEach(a=>{ if(a.status==='absent') days[a.seat]=(days[a.seat]||0)+1; });
+  let title=dt; try{ title=new Date(dt+'T00:00:00').toLocaleDateString('ar',{weekday:'long',year:'numeric',month:'long',day:'numeric'}); }catch(e){}
+  const rows=list.map((a,i)=>{ const st=a.status==='excused'?('مستأذن'+(a.excuseTime?(' '+a.excuseTime):'')):a.status==='late'?('متأخر'+(a.entryTime?(' '+a.entryTime):'')):'غائب';
+    return '<tr><td>'+(i+1)+'</td><td>'+esc(a.seat)+'</td><td>'+esc(a.name)+'</td><td>'+esc(a.className||a.classCode||'')+'</td><td>'+st+'</td><td>'+(days[a.seat]||0)+'</td></tr>'; }).join('');
+  const w=window.open('','_blank'); if(!w){ toast('اسمح بالنوافذ المنبثقة للطباعة'); return; }
+  w.document.write('<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>غياب '+esc(title)+'</title>'+
+    '<style>body{font-family:Tahoma,Arial;padding:20px}h2{text-align:center}table{width:100%;border-collapse:collapse;margin-top:14px}th,td{border:1px solid #999;padding:8px;text-align:center;font-size:13px}th{background:#eee}</style></head><body>'+
+    '<h2>سجل غياب الطلاب — '+esc(title)+'</h2>'+
+    '<table><thead><tr><th>#</th><th>الهوية</th><th>الاسم</th><th>الصف</th><th>الحالة</th><th>أيام الغياب</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+    '<scr'+'ipt>window.onload=function(){setTimeout(function(){window.print();},300);}</scr'+'ipt></body></html>');
+  w.document.close();
 }
 function absRow(a,dayCount,canEdit){
   const bg = a.status==='excused'?'#FFF7E6':a.status==='late'?'#FFF1E0':'#FDECEC';
@@ -555,31 +585,52 @@ async function absSet(id,status){
 }
 async function renderStudentStatus(c){
   const canEdit=can('index.studentStatus','edit');
-  c.innerHTML='<div class="panel-head"><h2>حالة الطالب</h2></div><div class="sub-note">الحالة الاجتماعية والصحية لكل طالب'+(canEdit?' — تُعبّأ من الموجه الطلابي.':' — عرض فقط.')+'</div><div id="ssRoot"><div class="empty"><span class="spin"></span></div></div>';
+  c.innerHTML='<div class="panel-head"><h2>حالة الطالب</h2></div><div class="sub-note">اختر الفصل ثم الطالب لتعبئة حالته'+(canEdit?'.':' (عرض فقط).')+'</div>'+
+    '<div class="card" id="ssForm"><div class="empty"><span class="spin"></span></div></div>'+
+    '<h3 style="margin:16px 4px 8px;font-size:15px">الطلاب الذين لهم حالات مسجّلة</h3><div id="ssRecords"></div>';
   let classes=[],students=[];
   try{ const sp=await rosterDoc(CURRENT.schoolId).get(); if(sp.exists){ const d=JSON.parse(sp.data().value||'{}'); classes=Array.isArray(d.classes)?d.classes:[]; students=Array.isArray(d.students)?d.students:[]; } }catch(e){}
-  SS_DATA={classes,students};
-  if(!students.length){ $('#ssRoot').innerHTML='<div class="empty"><span class="e-emoji">👤</span>لا طلاب في روستر المدرسة.</div>'; return; }
-  const norm=x=>_normN(x);
-  students.sort((a,b)=>norm(a.classCode).localeCompare(norm(b.classCode),undefined,{numeric:true}));
-  $('#ssRoot').innerHTML=students.map(st=>{
-    const cl=classes.find(c=>String(c.code)===String(st.classCode))||{};
-    return '<div class="card"><div class="uname" style="font-size:14px">'+esc(st.name)+'</div>'+
-      '<div class="umeta" style="margin-bottom:8px">'+esc(st.seat||'')+' · '+esc(cl.name||st.classCode||'')+'</div>'+
-      '<div class="field"><label>الحالة الاجتماعية</label><input class="ssSocial" data-seat="'+esc(st.seat)+'" value="'+esc(st.social||'')+'" '+(canEdit?'':'disabled')+' placeholder="—"></div>'+
-      '<div class="field"><label>الصحة</label><input class="ssHealth" data-seat="'+esc(st.seat)+'" value="'+esc(st.health||'')+'" '+(canEdit?'':'disabled')+' placeholder="—"></div>'+
-    '</div>';
-  }).join('') + (canEdit?'<button class="btn" id="ssSave" style="margin-top:8px">💾 حفظ الكل</button>':'');
-  if(canEdit){ const b=$('#ssSave'); if(b) b.onclick=saveStudentStatus; }
+  SS_DATA={classes,students}; SS_SEL=null;
+  paintSSForm(canEdit); paintSSRecords();
 }
-async function saveStudentStatus(){
-  document.querySelectorAll('.ssSocial').forEach(inp=>{ const st=SS_DATA.students.find(x=>String(x.seat)===String(inp.dataset.seat)); if(st) st.social=inp.value.trim(); });
-  document.querySelectorAll('.ssHealth').forEach(inp=>{ const st=SS_DATA.students.find(x=>String(x.seat)===String(inp.dataset.seat)); if(st) st.health=inp.value.trim(); });
+function paintSSForm(canEdit){
+  const f=$('#ssForm'); if(!f) return;
+  if(!SS_DATA.students.length){ f.innerHTML='<div class="empty"><span class="e-emoji">👤</span>لا طلاب في روستر المدرسة.</div>'; return; }
+  const classOpts=SS_DATA.classes.map(c=>'<option value="'+esc(c.code)+'">'+esc(c.name)+'</option>').join('');
+  f.innerHTML=
+    '<div class="field"><label>الفصل</label><select id="ssClass"><option value="">— اختر —</option>'+classOpts+'</select></div>'+
+    '<div class="field"><label>الطالب</label><select id="ssStudent"><option value="">— اختر الفصل أولاً —</option></select></div>'+
+    '<div id="ssFields" style="display:none">'+
+      '<div class="field"><label>الحالة الاجتماعية</label><input id="ssSocial" '+(canEdit?'':'disabled')+' placeholder="—"></div>'+
+      '<div class="field"><label>الصحة</label><input id="ssHealth" '+(canEdit?'':'disabled')+' placeholder="—"></div>'+
+      (canEdit?'<button class="btn" id="ssSave">💾 حفظ</button>':'')+
+    '</div>';
+  $('#ssClass').onchange=()=>{ const code=$('#ssClass').value; const studs=SS_DATA.students.filter(s=>String(s.classCode)===String(code));
+    $('#ssStudent').innerHTML='<option value="">— اختر —</option>'+studs.map(s=>'<option value="'+esc(s.seat)+'">'+esc(s.name)+'</option>').join(''); $('#ssFields').style.display='none'; SS_SEL=null; };
+  $('#ssStudent').onchange=()=>{ const seat=$('#ssStudent').value; const st=SS_DATA.students.find(s=>String(s.seat)===String(seat));
+    if(!st){ $('#ssFields').style.display='none'; SS_SEL=null; return; }
+    SS_SEL=st; $('#ssSocial').value=st.social||''; $('#ssHealth').value=st.health||''; $('#ssFields').style.display='block'; };
+  if(canEdit){ const b=$('#ssSave'); if(b) b.onclick=saveStudentStatusOne; }
+}
+async function saveStudentStatusOne(){
+  if(!SS_SEL){ toast('اختر الطالب أولاً'); return; }
+  SS_SEL.social=($('#ssSocial').value||'').trim(); SS_SEL.health=($('#ssHealth').value||'').trim();
   try{
     const sp=await rosterDoc(CURRENT.schoolId).get(); const d=sp.exists?JSON.parse(sp.data().value||'{}'):{};
     await rosterDoc(CURRENT.schoolId).set({ value:JSON.stringify({classes:d.classes||SS_DATA.classes, students:SS_DATA.students, teacherAdd:d.teacherAdd!==false}), updatedAt:Date.now(), schoolId:CURRENT.schoolId, base:'roster' });
-    toast('تم حفظ حالات الطلاب');
+    toast('تم حفظ حالة الطالب'); paintSSRecords();
   }catch(e){ toast('خطأ: '+e.message); }
+}
+function paintSSRecords(){
+  const r=$('#ssRecords'); if(!r) return;
+  const norm=x=>_normN(x);
+  const withStatus=SS_DATA.students.filter(s=>(s.social&&s.social.trim())||(s.health&&s.health.trim())).sort((a,b)=>norm(a.classCode).localeCompare(norm(b.classCode),undefined,{numeric:true}));
+  if(!withStatus.length){ r.innerHTML='<div class="empty"><span class="e-emoji">📋</span>لا حالات مسجّلة بعد.</div>'; return; }
+  r.innerHTML=withStatus.map(s=>{ const cl=SS_DATA.classes.find(c=>String(c.code)===String(s.classCode))||{};
+    return '<div class="card"><div class="uname" style="font-size:14px">'+esc(s.name)+'</div>'+
+      '<div class="umeta">'+esc(s.seat||'')+' · '+esc(cl.name||s.classCode||'')+'</div>'+
+      '<div style="margin-top:6px;color:#2E73CC;font-weight:600;font-size:13px">الحالة الاجتماعية: '+esc(s.social||'—')+' · الصحة: '+esc(s.health||'—')+'</div></div>';
+  }).join('');
 }
 function renderPanel(){
   const c=$('#content');
@@ -949,7 +1000,7 @@ function groupStages(){
 function studentRowR(s,canDel,canEdit){
   const canAbs = can('index.absence','edit');
   const days = (RABS && RABS[s.seat]) || 0;
-  const meta = '<div class="umeta" style="font-size:11.5px;margin-top:2px">الحالة الاجتماعية: '+esc(s.social||'—')+' · الصحة: '+esc(s.health||'—')+' · عدد الغياب: '+days+'</div>';
+  const meta = '<div style="font-size:11.5px;margin-top:2px;color:#2E73CC;font-weight:600">الحالة الاجتماعية: '+esc(s.social||'—')+' · الصحة: '+esc(s.health||'—')+' · عدد الغياب: '+days+'</div>';
   return '<div style="padding:7px 4px;border-top:1px solid var(--line)">'+
     '<div style="display:flex;gap:6px;align-items:center">'+
       '<span style="font-family:monospace;color:var(--muted);font-size:12.5px;min-width:90px">'+esc(s.seat||'—')+'</span>'+

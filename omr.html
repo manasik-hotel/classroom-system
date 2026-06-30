@@ -22,15 +22,13 @@
   /* ---- top bar ---- */
   header.app{
     background:linear-gradient(180deg,var(--teal),var(--teal-d));
-    color:#fff; padding:14px 16px; position:sticky; top:0; z-index:30;
+    color:#fff; padding:8px 12px; position:sticky; top:0; z-index:30;
     box-shadow:var(--shadow);
   }
-  header.app h1{margin:0;font-size:18px;font-weight:700;letter-spacing:.2px}
-  header.app p{margin:2px 0 0;font-size:12px;opacity:.85}
-  nav.tabs{display:flex;gap:6px;margin-top:12px}
+  nav.tabs{display:flex;gap:4px;margin-top:0;flex-wrap:wrap}
   nav.tabs button{
-    flex:1;border:0;border-radius:10px;padding:9px 6px;font-size:13px;font-weight:600;
-    background:rgba(255,255,255,.14);color:#fff;cursor:pointer;transition:.15s;
+    flex:1;min-width:0;border:0;border-radius:8px;padding:6px 4px;font-size:11px;font-weight:600;
+    background:rgba(255,255,255,.14);color:#fff;cursor:pointer;transition:.15s;white-space:nowrap;
   }
   nav.tabs button.active{background:#fff;color:var(--teal-d)}
   main{padding:16px;max-width:860px;margin:0 auto}
@@ -143,8 +141,6 @@
 </head>
 <body>
 <header class="app">
-  <h1>نظام التصحيح الآلي لبطاقات الإجابة</h1>
-  <p>تصميم النماذج وتصحيحها بالكاميرا أو الماسح الضوئي</p>
   <nav class="tabs">
     <button id="tab-students" class="active" onclick="showTab('students')">👥 الطلاب والفصول</button>
     <button id="tab-design" onclick="showTab('design')">🖨️ التصميم</button>
