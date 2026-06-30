@@ -139,12 +139,15 @@
     #sheetHost svg{box-shadow:none;width:100%}
   }
   /* ===== المرحلة 2: البطاقة العائمة (الحضور/المتابعة/سجل المتابعة) ===== */
-  .flcard{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:55;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.97);border:1px solid var(--line);border-radius:14px 0 0 14px;box-shadow:-3px 3px 14px rgba(16,40,40,.16);padding:7px 5px}
+  .flcard{position:fixed;top:50%;right:8px;transform:translateY(-50%);z-index:1100;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.5);backdrop-filter:blur(7px);-webkit-backdrop-filter:blur(7px);border:1px solid rgba(255,255,255,.6);border-radius:16px;box-shadow:0 6px 22px rgba(16,40,40,.18);padding:6px}
   .flcard.show{display:flex}
-  .flcard button{width:54px;appearance:none;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 3px;font:inherit;color:var(--teal-d);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1.12}
-  .flcard button .fl-ic{font-size:17px}
-  .flcard button .fl-tx{font-size:9.5px;font-weight:800;text-align:center}
-  .flcard button.active{background:var(--teal);color:#fff;border-color:var(--teal)}
+  .fl-toggle{width:54px;appearance:none;border:1px solid rgba(216,226,224,.7);background:rgba(255,255,255,.55);border-radius:9px;padding:3px;font-size:13px;font-weight:800;color:var(--muted);cursor:pointer;line-height:1}
+  .fl-btns{display:flex;flex-direction:column;gap:6px}
+  .flcard.collapsed .fl-btns{display:none}
+  .flcard button.fl-nav{width:54px;appearance:none;border:1px solid rgba(216,226,224,.7);background:rgba(255,255,255,.62);border-radius:10px;padding:8px 3px;font:inherit;color:var(--teal-d);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1.12}
+  .flcard button.fl-nav .fl-ic{font-size:17px}
+  .flcard button.fl-nav .fl-tx{font-size:9.5px;font-weight:800;text-align:center}
+  .flcard button.fl-nav.active{background:rgba(15,118,110,.88);color:#fff;border-color:transparent}
   .flov{position:fixed;inset:0;z-index:1000;background:var(--paper);display:none;flex-direction:column}
   .flov.show{display:flex}
   .flov-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#fff;border-bottom:1px solid var(--line)}
@@ -154,6 +157,9 @@
   .flstu{border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:8px;background:#fff}
   .flstu .nm{font-weight:800;color:var(--ink)}
   .flstu .mt{font-size:12px;color:var(--muted);margin-top:2px}
+  .fucircs{display:flex;flex-wrap:wrap;gap:7px;margin-top:9px}
+  .fucirc{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:#f3f8f7;font-size:19px;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0;line-height:1}
+  .fucirc.add{border-style:dashed;border-color:var(--teal);color:var(--teal-d);background:#fff;font-size:16px}
 </style>
 </head>
 <body>
@@ -2334,6 +2340,7 @@ function switchStuView(v){
   else if(v==='record') renderRecordView();
 }
 function closeStuOverlays(){ switchStuView('attend'); }
+function flToggle(){ const c=document.getElementById('flCard'); if(!c) return; c.classList.toggle('collapsed'); const t=document.getElementById('flTog'); if(t) t.textContent=c.classList.contains('collapsed')?'‹':'›'; }
 function flFillClasses(selId){
   const sel=document.getElementById(selId); if(!sel) return;
   const cur=sel.value;
@@ -2350,14 +2357,49 @@ function flStuLine(s){
   return '<div class="nm">'+escapeHtml(s.name||'')+'</div>'+
          '<div class="mt">الهوية: '+toArabic(s.seat)+' · الصف: '+escapeHtml(clsNameOmr(s.classCode)||'—')+'</div>';
 }
+function fuList(seat){ return (state.followup && state.followup[seat]) || []; }
+function fmtScore(n){ n=+n||0; return (n>0?'+':'')+toArabic(n); }
+function flStuName(seat){ const s=(state.students||[]).find(x=>String(x.seat)===String(seat)); return s?s.name:''; }
+async function saveFollowup(){ try{ await cloudSet('results','followup', state.followup||{}); }catch(e){} }
 function renderFollowView(){
   flFillClasses('followClass');
   const sel=document.getElementById('followClass'); const code=sel?sel.value:'';
   const studs=flStudents(code);
   const body=document.getElementById('followBody'); if(!body) return;
   if(!studs.length){ body.innerHTML='<p class="hint">لا يوجد طلاب لعرضهم.</p>'; return; }
-  body.innerHTML=studs.map(s=>'<div class="flstu">'+flStuLine(s)+
-    '<div class="hint" style="margin-top:7px">⭕ دوائر التقييم ولصق الملصقات (المرحلة 3).</div></div>').join('');
+  body.innerHTML=studs.map(s=>{
+    const fu=fuList(s.seat);
+    const circles=fu.map(e=>'<button class="fucirc" title="'+escapeHtml(e.name)+' ('+fmtScore(e.score)+')" onclick="removeFu(\''+escapeHtml(String(s.seat))+'\',\''+e.id+'\')">'+escapeHtml(e.icon||'•')+'</button>').join('');
+    const add='<button class="fucirc add" onclick="openStickerPalette(\''+escapeHtml(String(s.seat))+'\')">➕</button>';
+    return '<div class="flstu">'+flStuLine(s)+'<div class="fucircs">'+circles+add+'</div></div>';
+  }).join('');
+}
+function openStickerPalette(seat){
+  if(!clsGuardEdit()) return;
+  ensureStickers();
+  const en=enabledStickers();
+  if(!en.length){ omrModal('<div style="text-align:center"><div style="font-size:30px">🏷️</div><h3 style="margin:8px 0">لا ملصقات مفعّلة</h3><p class="hint">فعّل ملصقات من «سجل الأعمال ← إعداد ملصقات التقييم» أولاً.</p><button class="ghost" style="width:100%;margin-top:10px" onclick="closeOmrModal()">حسناً</button></div>'); return; }
+  const grid=en.map(st=>'<button onclick="pasteSticker(\''+escapeHtml(String(seat))+'\',\''+st.id+'\')" style="display:flex;flex-direction:column;align-items:center;gap:3px;border:1px solid var(--line);border-radius:12px;padding:10px 5px;background:#fff;cursor:pointer;font:inherit">'+
+    '<span style="font-size:22px">'+escapeHtml(st.icon||'•')+'</span>'+
+    '<span style="font-size:10.5px;font-weight:700;color:var(--ink);text-align:center;line-height:1.2">'+escapeHtml(st.name)+'</span>'+
+    '<span style="font-size:11px;font-weight:800;color:'+((+st.score)<0?'var(--bad)':'var(--ok)')+'">'+fmtScore(st.score)+'</span></button>').join('');
+  omrModal('<h3 style="margin:0 0 3px">🏷️ لصق ملصق</h3><p class="hint" style="margin:0 0 12px">'+escapeHtml(flStuName(seat))+'</p>'+
+    '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+grid+'</div>'+
+    '<button class="ghost" style="width:100%;margin-top:12px" onclick="closeOmrModal()">إغلاق</button>');
+}
+function pasteSticker(seat,sid){
+  const st=(state.stickers||[]).find(x=>x.id===sid); if(!st) return;
+  state.followup=state.followup||{};
+  (state.followup[seat]=state.followup[seat]||[]).push({id:'fu_'+Date.now()+'_'+Math.random().toString(36).slice(2,5), sid:st.id, icon:st.icon, name:st.name, score:st.score, cat:st.cat, ts:Date.now()});
+  saveFollowup(); closeOmrModal(); renderFollowView();
+}
+function removeFu(seat,fid){
+  if(!clsGuardDel()) return;
+  if(!confirm('إزالة هذا الملصق من الطالب؟')) return;
+  const arr=state.followup&&state.followup[seat]; if(!arr) return;
+  const i=arr.findIndex(x=>x.id===fid); if(i>=0) arr.splice(i,1);
+  if(!arr.length) delete state.followup[seat];
+  saveFollowup(); renderFollowView();
 }
 function renderRecordView(){
   flFillClasses('recordClass');
@@ -3881,6 +3923,7 @@ function defaultWorkCfg(){
 }
 state.workCfg = defaultWorkCfg();
 state.stickers = [];   // ملصقات التقييم: {id,name,score,itemId,enabled}
+state.followup = {};   // متابعة: {seat:[{id,sid,icon,name,score,cat,ts}]}
 // مجموع وزن بنود الفترة الظاهرة (يتجاهل المخفيّة)
 function periodTotal(p){ return (p.items||[]).filter(it=>!it.hidden).reduce((s,it)=>s+(+it.max||0),0); }
 // وزن بند مجمّع = مجموع أوزان أجزائه الظاهرة
@@ -4339,6 +4382,7 @@ async function loadStudentsFromCloud(manual){
       if(Array.isArray(old)) state.students = old;
     }
     rosterLoaded = true;
+    try{ const _fu = await cloudGet('results','followup'); state.followup = (_fu && typeof _fu==='object' && !Array.isArray(_fu)) ? _fu : {}; }catch(e){ state.followup = {}; }
     await clsProvisionFromSchool();
     refreshClassDropdowns(); renderClasses(); renderStudents();
     if(typeof renderWlHeader==='function') renderWlHeader();
@@ -4366,13 +4410,15 @@ window.addEventListener('load', ()=>{
 </script>
 <!-- ===== المرحلة 2: البطاقة العائمة ===== -->
 <div id="flCard" class="flcard">
-  <button id="flb-attend" class="active" onclick="switchStuView('attend')"><span class="fl-ic">🟢</span><span class="fl-tx">الحضور</span></button>
-  <button id="flb-follow" onclick="switchStuView('follow')"><span class="fl-ic">📌</span><span class="fl-tx">المتابعة</span></button>
-  <button id="flb-record" onclick="switchStuView('record')"><span class="fl-ic">📋</span><span class="fl-tx">سجل المتابعة</span></button>
+  <button class="fl-toggle" id="flTog" onclick="flToggle()">›</button>
+  <div class="fl-btns" id="flBtns">
+    <button id="flb-attend" class="fl-nav active" onclick="switchStuView('attend')"><span class="fl-ic">🟢</span><span class="fl-tx">الحضور</span></button>
+    <button id="flb-follow" class="fl-nav" onclick="switchStuView('follow')"><span class="fl-ic">📌</span><span class="fl-tx">المتابعة</span></button>
+    <button id="flb-record" class="fl-nav" onclick="switchStuView('record')"><span class="fl-ic">📋</span><span class="fl-tx">سجل المتابعة</span></button>
+  </div>
 </div>
 <div id="followOv" class="flov">
   <div class="flov-head">
-    <button class="flx" onclick="closeStuOverlays()">✕</button>
     <b style="font-size:15px;color:var(--teal-d);white-space:nowrap">📌 المتابعة</b>
     <select id="followClass" onchange="renderFollowView()"></select>
   </div>
@@ -4380,7 +4426,6 @@ window.addEventListener('load', ()=>{
 </div>
 <div id="recordOv" class="flov">
   <div class="flov-head">
-    <button class="flx" onclick="closeStuOverlays()">✕</button>
     <b style="font-size:15px;color:var(--teal-d);white-space:nowrap">📋 سجل المتابعة</b>
     <select id="recordClass" onchange="renderRecordView()"></select>
   </div>
