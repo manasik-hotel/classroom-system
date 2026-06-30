@@ -445,6 +445,12 @@
       </div>
     </div>
     <div class="card">
+      <h2><button class="collapseBtn" onclick="toggleCard('cardStickers',this)">+</button> إعداد ملصقات التقييم <span class="sub">ملصقات تُلصق للطلاب في المتابعة — الحالة الافتراضية: موقف</span></h2>
+      <div id="cardStickers" style="display:none">
+        <div id="stickerSetupHost"></div>
+      </div>
+    </div>
+    <div class="card">
       <h2>سجل الأعمال</h2>
       <div id="cloudStatus" class="status info" style="margin-bottom:10px">جارٍ التهيئة…</div>
       <label class="field">عرض سجل الصف
@@ -2249,6 +2255,52 @@ function setItemName(pi,ii,v){ state.workCfg.periods[pi].items[ii].name=v; }
 function setItemMax(pi,ii,v){ state.workCfg.periods[pi].items[ii].max=+v||0; renderWlSetup(); renderWorkLog(); }
 function toggleItemHidden(pi,ii){ const it=state.workCfg.periods[pi].items[ii]; it.hidden=!it.hidden; renderWlSetup(); renderWorkLog(); }
 function saveWlCfg(){ saveStudentsToCloud(); renderWlSetup(); renderWorkLog(); alert('تم حفظ إعداد السجل.'); }
+/* ===== المرحلة 1: إعداد ملصقات التقييم (مرتبطة ببنود السجل: المشاركة/الواجبات/المشروعات) ===== */
+function stickerCats(){
+  const pfx = (CLS_SESSION && CLS_SESSION.period==='second') ? 'p2' : 'p1';
+  const per = (state.workCfg.periods||[]).find(p=>(p.items||[]).some(it=>it.id&&it.id.indexOf(pfx+'_')===0)) || (state.workCfg.periods||[])[0] || {items:[]};
+  return (per.items||[]).filter(it=>/_(part|hw|proj)$/.test(it.id||'') && !it.hidden).map(it=>({id:it.id, name:it.name}));
+}
+function stickerCatName(itemId){
+  for(const p of (state.workCfg.periods||[])){ const it=(p.items||[]).find(x=>x.id===itemId); if(it) return it.name; }
+  return '—';
+}
+function renderStickerSetup(){
+  const host=document.getElementById('stickerSetupHost'); if(!host) return;
+  const cats=stickerCats();
+  if(!cats.length){ host.innerHTML='<p class="hint" style="margin-top:0">لا توجد فئات في بنود السجل (المشاركة/الواجبات/المشروعات). راجع «إعداد بنود السجل».</p>'; return; }
+  const catOpts=(sel)=>cats.map(c=>'<option value="'+escapeHtml(c.id)+'"'+(String(sel)===String(c.id)?' selected':'')+'>'+escapeHtml(c.name)+'</option>').join('');
+  let html='<p class="hint" style="margin-top:0">لكل ملصق: اسم، درجة، فئة (من بنود السجل)، وتفعيل. تتغيّر أسماء الفئات تلقائياً مع تغيّر بنود السجل. الحالة الافتراضية: <b>موقف</b>.</p>';
+  (state.stickers||[]).forEach((st,i)=>{
+    html+='<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;background:#fff">'+
+      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'+
+        '<input value="'+escapeHtml(st.name||'')+'" onchange="setStickerField('+i+',\'name\',this.value)" placeholder="اسم الملصق" style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit">'+
+        '<input type="number" step="0.5" value="'+(st.score!=null?st.score:'')+'" onchange="setStickerField('+i+',\'score\',this.value)" placeholder="الدرجة" style="width:78px;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;text-align:center">'+
+      '</div>'+
+      '<div style="display:flex;gap:8px;align-items:center">'+
+        '<select onchange="setStickerField('+i+',\'itemId\',this.value)" style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff">'+catOpts(st.itemId)+'</select>'+
+        '<button class="ghost" onclick="toggleStickerEnabled('+i+')" style="padding:7px 9px;font-size:12px;white-space:nowrap;'+(st.enabled?'background:#e7f6ee;color:#197a44;border-color:#bfe6cf':'')+'">'+(st.enabled?'✅ مفعّل':'⛔ موقف')+'</button>'+
+        '<button class="ghost" onclick="delSticker('+i+')" style="padding:7px 9px;font-size:12px;color:var(--bad);border-color:var(--bad)">🗑</button>'+
+      '</div>'+
+    '</div>';
+  });
+  html+='<button class="ghost" style="margin-top:6px;width:100%" onclick="addSticker()">➕ إضافة ملصق</button>';
+  html+='<button class="primary" style="margin-top:8px;width:100%" onclick="saveStickers()">💾 حفظ الملصقات</button>';
+  host.innerHTML=html;
+}
+function addSticker(){
+  const cats=stickerCats(); state.stickers=state.stickers||[];
+  state.stickers.push({ id:'stk_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name:'', score:1, itemId:(cats[0]&&cats[0].id)||'', enabled:false });
+  renderStickerSetup();
+}
+function setStickerField(i,field,v){ if(!state.stickers[i]) return; state.stickers[i][field] = (field==='score') ? (parseFloat(v)||0) : v; }
+function toggleStickerEnabled(i){ if(!state.stickers[i]) return; state.stickers[i].enabled = !state.stickers[i].enabled; renderStickerSetup(); }
+function delSticker(i){ if(!confirm('حذف هذا الملصق؟')) return; state.stickers.splice(i,1); renderStickerSetup(); saveStudentsToCloud(true); }
+function saveStickers(){
+  const bad=(state.stickers||[]).find(s=>!s.name || !s.name.trim() || !s.itemId);
+  if(bad){ alert('أكمل اسم كل ملصق واختر فئته.'); return; }
+  saveStudentsToCloud(true); renderStickerSetup(); alert('تم حفظ الملصقات ✅');
+}
 
 // ---- ترويسة السجل الثابتة (محفوظة) ----
 function renderWlHeader(){
@@ -3676,7 +3728,7 @@ function showTab(t){
   });
   // عند دخول تبويب الطلاب: كل الأقسام مصغّرة افتراضياً
   if(t==='students') collapseStudentCards();
-  if(t==='cloud'){ renderWlHeader(); renderWlSetup(); renderWorkLog(); }
+  if(t==='cloud'){ renderWlHeader(); renderWlSetup(); renderStickerSetup(); renderWorkLog(); }
   if(t==='notes') renderOmrNotes();
 }
 function collapseStudentCards(){
@@ -3754,6 +3806,7 @@ function defaultWorkCfg(){
   };
 }
 state.workCfg = defaultWorkCfg();
+state.stickers = [];   // ملصقات التقييم: {id,name,score,itemId,enabled}
 // مجموع وزن بنود الفترة الظاهرة (يتجاهل المخفيّة)
 function periodTotal(p){ return (p.items||[]).filter(it=>!it.hidden).reduce((s,it)=>s+(+it.max||0),0); }
 // وزن بند مجمّع = مجموع أوزان أجزائه الظاهرة
@@ -4189,7 +4242,7 @@ async function saveStudentsToCloud(manual){
   if(!cloudReady){ if(manual) alert('قاعدة البيانات غير مهيّأة.'); return; }
   if(!rosterLoaded && !manual) return;   // لا تحفظ قبل اكتمال التحميل الأول (حتى لا تُمسح الترويسة)
   try{
-    await cloudSet('exams', 'roster', { students: state.students, classes: state.classes, workCfg: state.workCfg });
+    await cloudSet('exams', 'roster', { students: state.students, classes: state.classes, workCfg: state.workCfg, stickers: state.stickers });
     if(manual) setCloudStatus('ok', `✅ حُفظ ${toArabic(state.students.length)} طالب و${toArabic(state.classes.length)} صفّاً سحابياً.`);
   }catch(e){ if(manual) alert('فشل الحفظ: '+e.message); }
 }
@@ -4199,6 +4252,7 @@ async function loadStudentsFromCloud(manual){
     let data = await cloudGet('exams', 'roster');
     if(data && (data.students||data.classes)){
       state.students = data.students||[]; state.classes = data.classes||[];
+      state.stickers = Array.isArray(data.stickers)?data.stickers:[];
       if(data.workCfg && data.workCfg.periods){
         // ادمج الترويسة المحفوظة فوق الافتراضية (فلا يُفقد أي حقل)
         const defH = defaultWorkCfg().header;
