@@ -138,6 +138,23 @@
     #sheetHost{background:#fff;padding:0;overflow:visible}
     #sheetHost svg{box-shadow:none;width:100%}
   }
+  /* ===== المرحلة 2: البطاقة العائمة (الحضور/المتابعة/سجل المتابعة) ===== */
+  .flcard{position:fixed;top:50%;right:0;transform:translateY(-50%);z-index:55;display:none;flex-direction:column;gap:6px;background:rgba(255,255,255,.97);border:1px solid var(--line);border-radius:14px 0 0 14px;box-shadow:-3px 3px 14px rgba(16,40,40,.16);padding:7px 5px}
+  .flcard.show{display:flex}
+  .flcard button{width:54px;appearance:none;border:1px solid var(--line);background:#fff;border-radius:10px;padding:8px 3px;font:inherit;color:var(--teal-d);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1.12}
+  .flcard button .fl-ic{font-size:17px}
+  .flcard button .fl-tx{font-size:9.5px;font-weight:800;text-align:center}
+  .flcard button.active{background:var(--teal);color:#fff;border-color:var(--teal)}
+  #panel-students.active{padding-right:64px}
+  .flov{position:fixed;inset:0;z-index:1000;background:var(--paper);display:none;flex-direction:column}
+  .flov.show{display:flex}
+  .flov-head{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#fff;border-bottom:1px solid var(--line)}
+  .flov-head .flx{appearance:none;border:1px solid var(--line);background:#fff;border-radius:9px;width:38px;height:38px;font-size:15px;cursor:pointer;flex:0 0 auto}
+  .flov-head select{flex:1;min-width:0;padding:9px;border:1px solid var(--line);border-radius:9px;font:inherit;background:#fff}
+  .flov-body{flex:1;overflow:auto;padding:12px 14px;-webkit-overflow-scrolling:touch}
+  .flstu{border:1px solid var(--line);border-radius:12px;padding:11px;margin-bottom:8px;background:#fff}
+  .flstu .nm{font-weight:800;color:var(--ink)}
+  .flstu .mt{font-size:12px;color:var(--muted);margin-top:2px}
 </style>
 </head>
 <body>
@@ -148,7 +165,7 @@
     <button id="tab-grade" onclick="showTab('grade')">📷 التصحيح</button>
     <button id="tab-results" onclick="showTab('results')">📊 النتائج</button>
     <button id="tab-cloud" onclick="showTab('cloud')">💼 سجل الأعمال</button>
-    <button id="tab-notes" onclick="showTab('notes')">📨 الملاحظات</button>
+    <button id="tab-notes" onclick="showTab('notes')">ملاحظات</button>
   </nav>
 </header>
 
@@ -2255,51 +2272,107 @@ function setItemName(pi,ii,v){ state.workCfg.periods[pi].items[ii].name=v; }
 function setItemMax(pi,ii,v){ state.workCfg.periods[pi].items[ii].max=+v||0; renderWlSetup(); renderWorkLog(); }
 function toggleItemHidden(pi,ii){ const it=state.workCfg.periods[pi].items[ii]; it.hidden=!it.hidden; renderWlSetup(); renderWorkLog(); }
 function saveWlCfg(){ saveStudentsToCloud(); renderWlSetup(); renderWorkLog(); alert('تم حفظ إعداد السجل.'); }
-/* ===== المرحلة 1: إعداد ملصقات التقييم (مرتبطة ببنود السجل: المشاركة/الواجبات/المشروعات) ===== */
+/* ===== المرحلة 1: ملصقات تقييم جاهزة (تعديل الأيقونة/الاسم/الدرجة/الفئة/التفعيل فقط) ===== */
+function defaultStickers(){
+  const S=(name,icon,score,cat)=>({id:'stk_'+name, name, icon, score, cat, enabled:false});
+  return [
+    S('صح','✅',1,'part'), S('اتقن','💡',2,'part'), S('حفظ','📚',1,'part'),
+    S('مميز','⭐',2,'part'), S('مؤدب','❤️',1,'part'), S('حل الواجب','📖',0.5,'hw'),
+    S('تطبيق عملي','💡',5,'proj'), S('إنجاز مشروع','⚙️',2,'proj'),
+    S('خطأ','❌',-1,'part'), S('لم يتقن','🧠',-2,'part'), S('لم يحفظ','🏆',-1,'part'),
+    S('لم يحل الواجب','📵',-0.5,'hw'), S('نسيان الكتاب','📒',-0.5,'hw'),
+    S('النوم في الحصة','😴',-0.5,'part'), S('التحدث أثناء الدرس','🗣️',-1,'part'),
+    S('مشاغب','😠',-2,'part'), S('لا مبالاة','😕',-1,'part')
+  ];
+}
+function ensureStickers(){ if(!Array.isArray(state.stickers) || !state.stickers.length) state.stickers = defaultStickers(); }
 function stickerCats(){
   const pfx = (CLS_SESSION && CLS_SESSION.period==='second') ? 'p2' : 'p1';
   const per = (state.workCfg.periods||[]).find(p=>(p.items||[]).some(it=>it.id&&it.id.indexOf(pfx+'_')===0)) || (state.workCfg.periods||[])[0] || {items:[]};
-  return (per.items||[]).filter(it=>/_(part|hw|proj)$/.test(it.id||'') && !it.hidden).map(it=>({id:it.id, name:it.name}));
+  const find=suf=>(per.items||[]).find(it=>(it.id||'').endsWith('_'+suf));
+  const fb={part:'المشاركة والتفاعل والأنشطة',hw:'الواجبات والتطبيقات الصفية',proj:'المشروعات والبحث'};
+  return ['part','hw','proj'].map(suf=>{ const it=find(suf); return {key:suf, name:it?it.name:fb[suf]}; });
 }
-function stickerCatName(itemId){
-  for(const p of (state.workCfg.periods||[])){ const it=(p.items||[]).find(x=>x.id===itemId); if(it) return it.name; }
-  return '—';
-}
+function stickerCatName(cat){ const c=stickerCats().find(x=>x.key===cat); return c?c.name:'—'; }
 function renderStickerSetup(){
   const host=document.getElementById('stickerSetupHost'); if(!host) return;
+  ensureStickers();
   const cats=stickerCats();
-  if(!cats.length){ host.innerHTML='<p class="hint" style="margin-top:0">لا توجد فئات في بنود السجل (المشاركة/الواجبات/المشروعات). راجع «إعداد بنود السجل».</p>'; return; }
-  const catOpts=(sel)=>cats.map(c=>'<option value="'+escapeHtml(c.id)+'"'+(String(sel)===String(c.id)?' selected':'')+'>'+escapeHtml(c.name)+'</option>').join('');
-  let html='<p class="hint" style="margin-top:0">لكل ملصق: اسم، درجة، فئة (من بنود السجل)، وتفعيل. تتغيّر أسماء الفئات تلقائياً مع تغيّر بنود السجل. الحالة الافتراضية: <b>موقف</b>.</p>';
-  (state.stickers||[]).forEach((st,i)=>{
-    html+='<div style="border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:8px;background:#fff">'+
-      '<div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">'+
-        '<input value="'+escapeHtml(st.name||'')+'" onchange="setStickerField('+i+',\'name\',this.value)" placeholder="اسم الملصق" style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit">'+
-        '<input type="number" step="0.5" value="'+(st.score!=null?st.score:'')+'" onchange="setStickerField('+i+',\'score\',this.value)" placeholder="الدرجة" style="width:78px;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;text-align:center">'+
+  const catOpts=(sel)=>cats.map(c=>'<option value="'+c.key+'"'+(sel===c.key?' selected':'')+'>'+escapeHtml(c.name)+'</option>').join('');
+  let html='<p class="hint" style="margin-top:0">ملصقات جاهزة — عدّل الأيقونة/الاسم/الدرجة/الفئة والتفعيل. لا إضافة ولا حذف. الحالة الافتراضية: <b>موقف</b>.</p>';
+  state.stickers.forEach((st,i)=>{
+    html+='<div style="border:1px solid var(--line);border-radius:12px;padding:9px;margin-bottom:8px;background:'+(st.enabled?'#f4fbf6':'#fff')+'">'+
+      '<div style="display:flex;gap:7px;align-items:center;margin-bottom:7px">'+
+        '<input value="'+escapeHtml(st.icon||'')+'" onchange="setStickerField('+i+',\'icon\',this.value)" maxlength="4" style="width:46px;text-align:center;padding:7px;border:1px solid var(--line);border-radius:8px;font-size:18px">'+
+        '<input value="'+escapeHtml(st.name||'')+'" onchange="setStickerField('+i+',\'name\',this.value)" style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit">'+
+        '<input type="number" step="0.5" value="'+st.score+'" onchange="setStickerField('+i+',\'score\',this.value)" style="width:70px;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;text-align:center">'+
       '</div>'+
-      '<div style="display:flex;gap:8px;align-items:center">'+
-        '<select onchange="setStickerField('+i+',\'itemId\',this.value)" style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff">'+catOpts(st.itemId)+'</select>'+
-        '<button class="ghost" onclick="toggleStickerEnabled('+i+')" style="padding:7px 9px;font-size:12px;white-space:nowrap;'+(st.enabled?'background:#e7f6ee;color:#197a44;border-color:#bfe6cf':'')+'">'+(st.enabled?'✅ مفعّل':'⛔ موقف')+'</button>'+
-        '<button class="ghost" onclick="delSticker('+i+')" style="padding:7px 9px;font-size:12px;color:var(--bad);border-color:var(--bad)">🗑</button>'+
+      '<div style="display:flex;gap:7px;align-items:center">'+
+        '<select onchange="setStickerField('+i+',\'cat\',this.value)" style="flex:1;min-width:0;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit;background:#fff;font-size:12.5px">'+catOpts(st.cat)+'</select>'+
+        '<button class="ghost" onclick="toggleStickerEnabled('+i+')" style="padding:7px 11px;font-size:12px;white-space:nowrap;'+(st.enabled?'background:#e7f6ee;color:#197a44;border-color:#bfe6cf':'')+'">'+(st.enabled?'✅ مفعّل':'⛔ موقف')+'</button>'+
       '</div>'+
     '</div>';
   });
-  html+='<button class="ghost" style="margin-top:6px;width:100%" onclick="addSticker()">➕ إضافة ملصق</button>';
-  html+='<button class="primary" style="margin-top:8px;width:100%" onclick="saveStickers()">💾 حفظ الملصقات</button>';
+  html+='<button class="primary" style="margin-top:6px;width:100%" onclick="saveStickers()">💾 حفظ الملصقات</button>';
+  html+='<button class="ghost" style="margin-top:8px;width:100%;color:var(--bad);border-color:var(--bad)" onclick="restoreDefaultStickers()">↩️ استعادة الملصقات الافتراضية</button>';
   host.innerHTML=html;
 }
-function addSticker(){
-  const cats=stickerCats(); state.stickers=state.stickers||[];
-  state.stickers.push({ id:'stk_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name:'', score:1, itemId:(cats[0]&&cats[0].id)||'', enabled:false });
-  renderStickerSetup();
+function setStickerField(i,field,v){ if(!state.stickers[i]) return; state.stickers[i][field]=(field==='score')?(parseFloat(v)||0):v; }
+function toggleStickerEnabled(i){ if(!state.stickers[i]) return; state.stickers[i].enabled=!state.stickers[i].enabled; renderStickerSetup(); }
+function saveStickers(){ saveStudentsToCloud(true); renderStickerSetup(); alert('تم حفظ الملصقات ✅'); }
+function restoreDefaultStickers(){ if(!confirm('استعادة الملصقات الافتراضية؟ ستُلغى تعديلاتك.')) return; state.stickers=defaultStickers(); renderStickerSetup(); saveStudentsToCloud(true); }
+function enabledStickers(){ ensureStickers(); return state.stickers.filter(s=>s.enabled); }
+
+/* ===== المرحلة 2: عرض الطلاب العائم (الحضور/المتابعة/سجل المتابعة) ===== */
+let omrStuView='attend';
+function switchStuView(v){
+  omrStuView=v;
+  ['attend','follow','record'].forEach(x=>{ const b=document.getElementById('flb-'+x); if(b) b.classList.toggle('active', x===v); });
+  const fo=document.getElementById('followOv'), ro=document.getElementById('recordOv');
+  if(fo) fo.classList.toggle('show', v==='follow');
+  if(ro) ro.classList.toggle('show', v==='record');
+  if(v==='follow') renderFollowView();
+  else if(v==='record') renderRecordView();
 }
-function setStickerField(i,field,v){ if(!state.stickers[i]) return; state.stickers[i][field] = (field==='score') ? (parseFloat(v)||0) : v; }
-function toggleStickerEnabled(i){ if(!state.stickers[i]) return; state.stickers[i].enabled = !state.stickers[i].enabled; renderStickerSetup(); }
-function delSticker(i){ if(!confirm('حذف هذا الملصق؟')) return; state.stickers.splice(i,1); renderStickerSetup(); saveStudentsToCloud(true); }
-function saveStickers(){
-  const bad=(state.stickers||[]).find(s=>!s.name || !s.name.trim() || !s.itemId);
-  if(bad){ alert('أكمل اسم كل ملصق واختر فئته.'); return; }
-  saveStudentsToCloud(true); renderStickerSetup(); alert('تم حفظ الملصقات ✅');
+function closeStuOverlays(){ switchStuView('attend'); }
+function flFillClasses(selId){
+  const sel=document.getElementById(selId); if(!sel) return;
+  const cur=sel.value;
+  sel.innerHTML='<option value="">— كل الفصول —</option>'+(state.classes||[]).map(c=>'<option value="'+escapeHtml(c.code)+'">'+escapeHtml(c.name)+'</option>').join('');
+  if(cur) sel.value=cur;
+}
+function flStudents(code){
+  let arr=(state.students||[]).slice();
+  if(code) arr=arr.filter(s=>s.classCode===code);
+  arr.sort((a,b)=> String(a.classCode||'').localeCompare(String(b.classCode||''),'ar') || String(a.seat).localeCompare(String(b.seat),'ar',{numeric:true}));
+  return arr;
+}
+function flStuLine(s){
+  return '<div class="nm">'+escapeHtml(s.name||'')+'</div>'+
+         '<div class="mt">الهوية: '+toArabic(s.seat)+' · الصف: '+escapeHtml(clsNameOmr(s.classCode)||'—')+'</div>';
+}
+function renderFollowView(){
+  flFillClasses('followClass');
+  const sel=document.getElementById('followClass'); const code=sel?sel.value:'';
+  const studs=flStudents(code);
+  const body=document.getElementById('followBody'); if(!body) return;
+  if(!studs.length){ body.innerHTML='<p class="hint">لا يوجد طلاب لعرضهم.</p>'; return; }
+  body.innerHTML=studs.map(s=>'<div class="flstu">'+flStuLine(s)+
+    '<div class="hint" style="margin-top:7px">⭕ دوائر التقييم ولصق الملصقات (المرحلة 3).</div></div>').join('');
+}
+function renderRecordView(){
+  flFillClasses('recordClass');
+  const sel=document.getElementById('recordClass'); const code=sel?sel.value:'';
+  const studs=flStudents(code);
+  const cats=stickerCats();
+  const body=document.getElementById('recordBody'); if(!body) return;
+  if(!studs.length){ body.innerHTML='<p class="hint">لا يوجد طلاب لعرضهم.</p>'; return; }
+  body.innerHTML=studs.map(s=>{
+    const boxes=cats.map(c=>'<div style="flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:8px 6px;text-align:center;background:#fafafa">'+
+      '<div style="font-size:10.5px;color:var(--muted);line-height:1.25">'+escapeHtml(c.name)+'</div>'+
+      '<div style="font-weight:800;font-size:16px;color:var(--teal-d);margin-top:3px">٠</div></div>').join('');
+    return '<div class="flstu">'+flStuLine(s)+'<div style="display:flex;gap:7px;margin-top:9px">'+boxes+'</div></div>';
+  }).join('');
 }
 
 // ---- ترويسة السجل الثابتة (محفوظة) ----
@@ -3727,7 +3800,9 @@ function showTab(t){
     document.getElementById('tab-'+x).classList.toggle('active', x===t);
   });
   // عند دخول تبويب الطلاب: كل الأقسام مصغّرة افتراضياً
-  if(t==='students') collapseStudentCards();
+  const flc=document.getElementById('flCard');
+  if(t==='students'){ collapseStudentCards(); if(flc) flc.classList.add('show'); }
+  else { if(flc) flc.classList.remove('show'); closeStuOverlays(); }
   if(t==='cloud'){ renderWlHeader(); renderWlSetup(); renderStickerSetup(); renderWorkLog(); }
   if(t==='notes') renderOmrNotes();
 }
@@ -4253,6 +4328,7 @@ async function loadStudentsFromCloud(manual){
     if(data && (data.students||data.classes)){
       state.students = data.students||[]; state.classes = data.classes||[];
       state.stickers = Array.isArray(data.stickers)?data.stickers:[];
+      ensureStickers();
       if(data.workCfg && data.workCfg.periods){
         // ادمج الترويسة المحفوظة فوق الافتراضية (فلا يُفقد أي حقل)
         const defH = defaultWorkCfg().header;
@@ -4283,10 +4359,33 @@ window.addEventListener('load', ()=>{
   renderClasses();
   renderStudents();
   collapseStudentCards();
+  { const flc=document.getElementById('flCard'); if(flc) flc.classList.add('show'); }
   const wrap=document.getElementById('canvasWrap');
   wrap.addEventListener('click', onCanvasTap);
   initFirebase();
 });
 </script>
+<!-- ===== المرحلة 2: البطاقة العائمة ===== -->
+<div id="flCard" class="flcard">
+  <button id="flb-attend" class="active" onclick="switchStuView('attend')"><span class="fl-ic">🟢</span><span class="fl-tx">الحضور</span></button>
+  <button id="flb-follow" onclick="switchStuView('follow')"><span class="fl-ic">📌</span><span class="fl-tx">المتابعة</span></button>
+  <button id="flb-record" onclick="switchStuView('record')"><span class="fl-ic">📋</span><span class="fl-tx">سجل المتابعة</span></button>
+</div>
+<div id="followOv" class="flov">
+  <div class="flov-head">
+    <button class="flx" onclick="closeStuOverlays()">✕</button>
+    <b style="font-size:15px;color:var(--teal-d);white-space:nowrap">📌 المتابعة</b>
+    <select id="followClass" onchange="renderFollowView()"></select>
+  </div>
+  <div class="flov-body" id="followBody"></div>
+</div>
+<div id="recordOv" class="flov">
+  <div class="flov-head">
+    <button class="flx" onclick="closeStuOverlays()">✕</button>
+    <b style="font-size:15px;color:var(--teal-d);white-space:nowrap">📋 سجل المتابعة</b>
+    <select id="recordClass" onchange="renderRecordView()"></select>
+  </div>
+  <div class="flov-body" id="recordBody"></div>
+</div>
 </body>
 </html>
