@@ -338,7 +338,7 @@
         </label>
         <div id="studentsHost"><div class="empty">لا يوجد طلاب بعد.</div></div>
         <p class="hint" style="margin:10px 0 0;line-height:1.9">📌 <b>عرض سجل الطالب:</b> اضغط رقم الهوية.<br>📌 <b>تسجيل الحضور والغياب والتأخّر:</b> اضغط اسم الطالب.<br>📌 <b>نقل الطالب أو حذفه:</b> من الزرّين بجانب بطاقته. <b>إرسال ملاحظة عن طالب:</b> من تبويب «الملاحظات».</p>
-        <button class="primary" style="margin-top:12px;width:100%;background:#0b7a63" onclick="commitAttendance()">💾 الحفظ في سجل الأعمال</button>
+        <button class="primary" style="position:sticky;bottom:8px;margin-top:12px;width:100%;background:#0b7a63;box-shadow:0 4px 14px rgba(11,122,99,.35);z-index:20" onclick="commitAttendance()">💾 الحفظ في سجل الأعمال</button>
       </div>
     </div>
   </section>
@@ -455,21 +455,20 @@
   <!-- ================= سجل الأعمال ================= -->
   <section id="panel-cloud" class="panel">
     <div class="card">
-      <h2><button class="collapseBtn" onclick="toggleCard('cardWlHeader',this)">+</button> ترويسة السجل <span class="sub">بيانات ثابتة تظهر في رأس التقرير</span></h2>
-      <div id="cardWlHeader" style="display:none">
-        <div id="wlHeaderHost"></div>
-      </div>
-    </div>
-    <div class="card">
-      <h2><button class="collapseBtn" onclick="toggleCard('cardWlSetup',this)">+</button> إعداد بنود السجل <span class="sub">عدّل أسماء البنود وأوزانها وأخفِ ما لا تريد</span></h2>
-      <div id="cardWlSetup" style="display:none">
-        <div id="wlSetupHost"></div>
-      </div>
-    </div>
-    <div class="card">
-      <h2><button class="collapseBtn" onclick="toggleCard('cardStickers',this)">+</button> إعداد ملصقات التقييم <span class="sub">ملصقات تُلصق للطلاب في المتابعة — الحالة الافتراضية: موقف</span></h2>
-      <div id="cardStickers" style="display:none">
-        <div id="stickerSetupHost"></div>
+      <h2><button class="collapseBtn" onclick="toggleCard('cardSetupAll',this)">+</button> إعداد السجل والملصقات <span class="sub">الترويسة وبنود السجل وملصقات التقييم</span></h2>
+      <div id="cardSetupAll" style="display:none">
+        <div style="border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden">
+          <h3 style="margin:0;padding:11px 12px;background:#f4f8f7;font-size:14px;cursor:pointer" onclick="toggleCard('cardWlHeader',this)"><span class="collapseBtn" style="display:inline-block">+</span> ترويسة السجل</h3>
+          <div id="cardWlHeader" style="display:none;padding:12px"><div id="wlHeaderHost"></div></div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:12px;margin-bottom:10px;overflow:hidden">
+          <h3 style="margin:0;padding:11px 12px;background:#f4f8f7;font-size:14px;cursor:pointer" onclick="toggleCard('cardWlSetup',this)"><span class="collapseBtn" style="display:inline-block">+</span> إعداد بنود السجل</h3>
+          <div id="cardWlSetup" style="display:none;padding:12px"><div id="wlSetupHost"></div></div>
+        </div>
+        <div style="border:1px solid var(--line);border-radius:12px;overflow:hidden">
+          <h3 style="margin:0;padding:11px 12px;background:#f4f8f7;font-size:14px;cursor:pointer" onclick="toggleCard('cardStickers',this)"><span class="collapseBtn" style="display:inline-block">+</span> إعداد ملصقات التقييم</h3>
+          <div id="cardStickers" style="display:none;padding:12px"><div id="stickerSetupHost"></div></div>
+        </div>
       </div>
     </div>
     <div class="card">
@@ -2279,15 +2278,15 @@ function toggleItemHidden(pi,ii){ const it=state.workCfg.periods[pi].items[ii]; 
 function saveWlCfg(){ saveStudentsToCloud(); renderWlSetup(); renderWorkLog(); alert('تم حفظ إعداد السجل.'); }
 /* ===== المرحلة 1: ملصقات تقييم جاهزة (تعديل الأيقونة/الاسم/الدرجة/الفئة/التفعيل فقط) ===== */
 function defaultStickers(){
-  const S=(name,icon,score,cat)=>({id:'stk_'+name, name, icon, score, cat, enabled:false});
+  const S=(name,icon,score,cat,discount)=>({id:'stk_'+name, name, icon, score, cat, discount:!!discount, enabled:false});
   return [
-    S('صح','✅',1,'part'), S('اتقن','💡',2,'part'), S('حفظ','📚',1,'part'),
-    S('مميز','⭐',2,'part'), S('مؤدب','❤️',1,'part'), S('حل الواجب','📖',0.5,'hw'),
-    S('تطبيق عملي','💡',5,'proj'), S('إنجاز مشروع','⚙️',2,'proj'),
-    S('خطأ','❌',-1,'part'), S('لم يتقن','🧠',-2,'part'), S('لم يحفظ','🏆',-1,'part'),
-    S('لم يحل الواجب','📵',-0.5,'hw'), S('نسيان الكتاب','📒',-0.5,'hw'),
-    S('النوم في الحصة','😴',-0.5,'part'), S('التحدث أثناء الدرس','🗣️',-1,'part'),
-    S('مشاغب','😠',-2,'part'), S('لا مبالاة','😕',-1,'part')
+    S('صح','✅',1,'part',false), S('اتقن','💡',2,'part',false), S('حفظ','📚',1,'part',false),
+    S('مميز','⭐',2,'part',false), S('مؤدب','❤️',1,'part',false), S('حل الواجب','📖',0.5,'hw',false),
+    S('تطبيق عملي','💡',5,'proj',false), S('إنجاز مشروع','⚙️',2,'proj',false),
+    S('خطأ','❌',-1,'part',true), S('لم يتقن','🧠',-2,'part',true), S('لم يحفظ','🏆',-1,'part',true),
+    S('لم يحل الواجب','📵',-0.5,'hw',true), S('نسيان الكتاب','📒',-0.5,'hw',true),
+    S('النوم في الحصة','😴',-0.5,'part',true), S('التحدث أثناء الدرس','🗣️',-1,'part',true),
+    S('مشاغب','😠',-2,'part',true), S('لا مبالاة','😕',-1,'part',true)
   ];
 }
 function ensureStickers(){ if(!Array.isArray(state.stickers) || !state.stickers.length) state.stickers = defaultStickers(); }
@@ -2299,26 +2298,52 @@ function stickerCats(){
   return ['part','hw','proj'].map(suf=>{ const it=find(suf); return {key:suf, name:it?it.name:fb[suf]}; });
 }
 function stickerCatName(cat){ const c=stickerCats().find(x=>x.key===cat); return c?c.name:'—'; }
+/* ===== منطق درجات الملصقات (المرحلة 4) ===== */
+function activePeriod(){
+  const pfx=(CLS_SESSION && CLS_SESSION.period==='second')?'p2':'p1';
+  return (state.workCfg.periods||[]).find(p=>(p.items||[]).some(it=>it.id&&it.id.indexOf(pfx+'_')===0)) || (state.workCfg.periods||[])[0] || {items:[]};
+}
+function catWeight(cat){ // وزن بند الفئة (part/hw/proj)؛ التحفيز يرجع 0 (خارج البنود)
+  if(cat==='boost') return 0;
+  const per=activePeriod(); const it=(per.items||[]).find(x=>(x.id||'').endsWith('_'+cat));
+  return it?(+it.max||0):10;
+}
+// خيارات الدرجة المستحقة من وزن البند: زوجية بالنِسَب إن وزن>5، أو صحيحة 1..الوزن إن ≤5
+function earnOptions(weight){
+  weight=+weight||0;
+  if(weight<=5){ const a=[]; for(let v=1; v<=Math.floor(weight); v++) a.push(v); return a; }
+  return [0.2,0.4,0.6,0.8,1.0].map(p=>Math.round(weight*p*2)/2);
+}
+// خيارات الحسم: كل قيمة = (خيار الزيادة المقابل − 1) بالسالب (فردية أقل من الوزن)
+function discountOptions(weight){ return earnOptions(weight).map(v=>-(v-1)).filter(v=>v<0); }
+// رصيد الطالب المسجّل في بند (مجموع درجات ملصقات الدرجات العادية لذلك البند)
+function bandBalance(seat, cat){
+  let bal=0; fuList(seat).forEach(e=>{ if(e.cat===cat && !e.boost){ bal += (+e.earned||0); } });
+  return round1(bal);
+}
+
 function renderStickerSetup(){
   const host=document.getElementById('stickerSetupHost'); if(!host) return;
   ensureStickers();
-  const cats=stickerCats();
+  const cats=stickerCatsAll();
   const catOpts=(sel)=>cats.map(c=>'<option value="'+c.key+'"'+(sel===c.key?' selected':'')+'>'+escapeHtml(c.name)+'</option>').join('');
-  const W={ic:36,bnd:74,sc:46,tg:50};
-  let html='<p class="hint" style="margin-top:0">عدّل الأيقونة/الاسم/البند/الدرجة وفعّل ما تريد. لا إضافة ولا حذف. الافتراضي: <b>موقف</b>.</p>';
-  html+='<div style="overflow-x:auto"><div style="min-width:360px">';
+  const W={ic:34,bnd:78,hs:52,tg:44};
+  let html='<p class="hint" style="margin-top:0">عدّل الأيقونة/الاسم/البند، وفعّل «الحسومات» ليصير الملصق حسماً، ثم فعّل الملصق. لا إضافة ولا حذف. الافتراضي: <b>موقف</b>.</p>';
+  html+='<div style="overflow-x:auto"><div style="min-width:372px">';
   html+='<div style="display:flex;gap:5px;font-size:10px;font-weight:800;color:var(--muted);padding:0 2px 6px;text-align:center">'+
     '<span style="width:'+W.ic+'px">الأيقونة</span>'+
-    '<span style="flex:1;min-width:78px">الاسم</span>'+
+    '<span style="flex:1;min-width:70px">الاسم</span>'+
     '<span style="width:'+W.bnd+'px">البند</span>'+
-    '<span style="width:'+W.sc+'px">الدرجة</span>'+
+    '<span style="width:'+W.hs+'px">الحسومات</span>'+
     '<span style="width:'+W.tg+'px">التفعيل</span></div>';
   state.stickers.forEach((st,i)=>{
+    const isBoost=st.cat==='boost';
+    const disc=!!st.discount;
     html+='<div style="display:flex;gap:5px;align-items:center;margin-bottom:6px">'+
       '<input value="'+escapeHtml(st.icon||'')+'" onchange="setStickerField('+i+',\'icon\',this.value)" maxlength="4" style="width:'+W.ic+'px;text-align:center;padding:7px 2px;border:1px solid var(--line);border-radius:8px;font-size:16px">'+
-      '<input value="'+escapeHtml(st.name||'')+'" onchange="setStickerField('+i+',\'name\',this.value)" style="flex:1;min-width:78px;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit">'+
+      '<input value="'+escapeHtml(st.name||'')+'" onchange="setStickerField('+i+',\'name\',this.value)" style="flex:1;min-width:70px;padding:8px;border:1px solid var(--line);border-radius:8px;font:inherit">'+
       '<select onchange="setStickerField('+i+',\'cat\',this.value)" style="width:'+W.bnd+'px;padding:7px 3px;border:1px solid var(--line);border-radius:8px;font:inherit;font-size:11px;background:#fff">'+catOpts(st.cat)+'</select>'+
-      '<input type="number" step="0.5" value="'+st.score+'" onchange="setStickerField('+i+',\'score\',this.value)" style="width:'+W.sc+'px;padding:8px 3px;border:1px solid var(--line);border-radius:8px;font:inherit;text-align:center">'+
+      '<button onclick="toggleStickerDiscount('+i+')" title="حسم" '+(isBoost?'disabled':'')+' style="width:'+W.hs+'px;padding:8px 0;border:1px solid '+(disc?'#f0d2d0':'var(--line)')+';border-radius:8px;background:'+(isBoost?'#f2f2f2':(disc?'#fbeceb':'#fff'))+';color:'+(isBoost?'#bbb':(disc?'#c0392b':'var(--muted)'))+';cursor:'+(isBoost?'not-allowed':'pointer')+';font-size:11px;font-weight:800">'+(disc?'حسم':'—')+'</button>'+
       '<button onclick="toggleStickerEnabled('+i+')" style="width:'+W.tg+'px;padding:8px 0;border:1px solid '+(st.enabled?'#bfe6cf':'var(--line)')+';border-radius:8px;background:'+(st.enabled?'#e7f6ee':'#fff')+';color:'+(st.enabled?'#197a44':'var(--muted)')+';cursor:pointer;font-size:15px">'+(st.enabled?'✅':'⛔')+'</button>'+
     '</div>';
   });
@@ -2327,7 +2352,9 @@ function renderStickerSetup(){
   html+='<button class="ghost" style="margin-top:8px;width:100%;color:var(--bad);border-color:var(--bad)" onclick="restoreDefaultStickers()">↩️ استعادة الملصقات الافتراضية</button>';
   host.innerHTML=html;
 }
-function setStickerField(i,field,v){ if(!state.stickers[i]) return; state.stickers[i][field]=(field==='score')?(parseFloat(v)||0):v; }
+function setStickerField(i,field,v){ const st=state.stickers[i]; if(!st) return; if(field==='score'){ st.score=parseFloat(v)||0; return; } st[field]=v; if(field==='cat' && v==='boost') st.discount=false; }
+function toggleStickerDiscount(i){ const st=state.stickers[i]; if(!st) return; if(st.cat==='boost'){ alert('لا يمكن تفعيل الحسومات على ملصق «التحفيز الإيجابي».'); return; } st.discount=!st.discount; renderStickerSetup(); }
+function stickerCatsAll(){ return stickerCats().concat([{key:'boost',name:'التحفيز الإيجابي'}]); }
 function toggleStickerEnabled(i){ if(!state.stickers[i]) return; state.stickers[i].enabled=!state.stickers[i].enabled; renderStickerSetup(); }
 function saveStickers(){ saveStudentsToCloud(true); renderStickerSetup(); alert('تم حفظ الملصقات ✅'); }
 function restoreDefaultStickers(){ if(!confirm('استعادة الملصقات الافتراضية؟ ستُلغى تعديلاتك.')) return; state.stickers=defaultStickers(); renderStickerSetup(); saveStudentsToCloud(true); }
@@ -2345,6 +2372,7 @@ function switchStuView(v){
   else if(v==='record') renderRecordView();
 }
 function closeStuOverlays(){ switchStuView('attend'); }
+function gotoWorklog(){ closeStuOverlays(); showTab('cloud'); }
 function flToggle(){ const c=document.getElementById('flCard'); if(!c) return; c.classList.toggle('collapsed'); const t=document.getElementById('flTog'); if(t) t.textContent=c.classList.contains('collapsed')?'›':'‹'; }
 function flFillClasses(selId){
   const sel=document.getElementById(selId); if(!sel) return;
@@ -2374,7 +2402,7 @@ function renderFollowView(){
   if(!studs.length){ body.innerHTML='<p class="hint">لا يوجد طلاب لعرضهم.</p>'; return; }
   body.innerHTML=studs.map((s,i)=>{
     const fu=fuList(s.seat);
-    const circles=fu.map(e=>'<button class="fucirc" title="'+escapeHtml(e.name)+' ('+fmtScore(e.score)+')" onclick="removeFu(\''+escapeHtml(String(s.seat))+'\',\''+e.id+'\')">'+escapeHtml(e.icon||'•')+'</button>').join('');
+    const circles=fu.map(e=>'<button class="fucirc" title="'+escapeHtml(e.name)+' ('+fmtScore(e.earned!=null?e.earned:e.score)+')" onclick="removeFu(\''+escapeHtml(String(s.seat))+'\',\''+e.id+'\')">'+escapeHtml(e.icon||'•')+'</button>').join('');
     const add='<button class="fucirc add" onclick="openStickerPalette(\''+escapeHtml(String(s.seat))+'\')">➕</button>';
     return '<div class="flstu">'+flStuLine(s,i)+'<div class="fucircs">'+circles+add+'</div></div>';
   }).join('');
@@ -2408,9 +2436,49 @@ function openStickerPalette(seat){
 }
 function pasteSticker(seat,sid){
   const st=(state.stickers||[]).find(x=>x.id===sid); if(!st) return;
+  openScoreWindow(seat, st);
+}
+// نافذة الدرجة المستحقة / الحسم
+function openScoreWindow(seat, st){
+  const isBoost = st.cat==='boost';
+  const isDisc  = !!st.discount;
+  const w = catWeight(isBoost ? boostRefCat() : st.cat);
+  const head='<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">'+
+    '<button onclick="closeOmrModal()" style="appearance:none;border:1px solid var(--line);background:#fff;border-radius:50%;width:32px;height:32px;font-size:14px;cursor:pointer;flex:0 0 auto">✕</button>'+
+    '<b style="flex:1;min-width:0;font-size:14px;color:var(--ink)">'+escapeHtml(st.icon||'')+' '+escapeHtml(st.name)+'</b></div>';
+  let opts, title, disc=false;
+  if(isDisc){
+    disc=true;
+    opts=discountOptions(w);
+    const bal=bandBalance(seat, st.cat);
+    title='درجة الحسم المستحقة (الرصيد المتاح: '+toArabic(bal)+')';
+    const btns=opts.map(v=>{
+      const blocked = Math.abs(v) > bal + 1e-9;
+      return '<button '+(blocked?'disabled':'')+' onclick="commitSticker(\''+escapeHtml(String(seat))+'\',\''+st.id+'\','+v+')" style="padding:14px 0;border:1px solid '+(blocked?'#eee':'#f0d2d0')+';border-radius:12px;background:'+(blocked?'#f6f6f6':'#fbeceb')+';color:'+(blocked?'#ccc':'#c0392b')+';font:inherit;font-weight:800;font-size:16px;cursor:'+(blocked?'not-allowed':'pointer')+'">'+toArabic(v)+'</button>';
+    }).join('');
+    omrModal(head+'<p class="hint" style="margin:0 0 10px">'+escapeHtml(title)+'</p><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+btns+'</div>'+
+      (bal<=0?'<p class="hint" style="color:var(--bad);margin-top:10px">لا يمكن الحسم: لا توجد درجات مسجّلة للطالب في هذا البند.</p>':''));
+    return;
+  }
+  opts=earnOptions(w);
+  const bandNm = isBoost ? 'التحفيز الإيجابي' : stickerCatName(st.cat);
+  title='الدرجة المستحقة من '+toArabic(w)+' — '+bandNm;
+  const btns=opts.map(v=>'<button onclick="commitSticker(\''+escapeHtml(String(seat))+'\',\''+st.id+'\','+v+')" style="padding:14px 0;border:1px solid #cfe8d6;border-radius:12px;background:#eaf6ee;color:#197a44;font:inherit;font-weight:800;font-size:16px;cursor:pointer">'+toArabic(v)+'</button>').join('');
+  omrModal(head+'<p class="hint" style="margin:0 0 10px">'+escapeHtml(title)+'</p><div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px">'+btns+'</div>');
+}
+// بند مرجعي لوزن التحفيز (لا يُستخدم في معادلة البنود، فقط لتوليد خيارات نافذته من وزن مرجعي)
+function boostRefCat(){ return 'part'; }
+function commitSticker(seat, sid, earned){
+  const st=(state.stickers||[]).find(x=>x.id===sid); if(!st) return;
   state.followup=state.followup||{};
-  (state.followup[seat]=state.followup[seat]||[]).push({id:'fu_'+Date.now()+'_'+Math.random().toString(36).slice(2,5), sid:st.id, icon:st.icon, name:st.name, score:st.score, cat:st.cat, ts:Date.now()});
+  (state.followup[seat]=state.followup[seat]||[]).push({
+    id:'fu_'+Date.now()+'_'+Math.random().toString(36).slice(2,5),
+    sid:st.id, icon:st.icon, name:st.name, cat:st.cat,
+    boost: st.cat==='boost', discount: !!st.discount,
+    earned: +earned, ts:Date.now()
+  });
   saveFollowup(); closeOmrModal(); renderFollowView();
+  if(document.getElementById('recordOv') && document.getElementById('recordOv').classList.contains('show')) renderRecordView();
 }
 function removeFu(seat,fid){
   if(!clsGuardDel()) return;
@@ -2436,13 +2504,15 @@ function renderRecordView(){
     const r=fuCatSum(s.seat);
     const boxes=cats.map(c=>{
       const v=r.sums[c.key]||0, n=r.cnt[c.key]||0;
-      const col=v<0?'var(--bad)':(v>0?'var(--ok)':'var(--muted)');
+      const col=v>0?'var(--teal-d)':'var(--muted)';
       return '<div style="flex:1;min-width:0;border:1px solid var(--line);border-radius:10px;padding:8px 6px;text-align:center;background:#fafafa">'+
         '<div style="font-size:10.5px;color:var(--muted);line-height:1.25;min-height:28px">'+escapeHtml(c.name)+'</div>'+
-        '<div style="font-weight:800;font-size:21px;color:'+col+';margin-top:3px">'+fmtScore(v)+'</div>'+
+        '<div style="font-weight:800;font-size:21px;color:'+col+';margin-top:3px">'+toArabic(round1(v))+'</div>'+
         '<div style="font-size:9.5px;color:var(--muted);margin-top:1px">'+toArabic(n)+' ملصق</div></div>';
     }).join('');
-    return '<div class="flstu">'+flStuLine(s,i)+'<div style="display:flex;gap:7px;margin-top:9px">'+boxes+'</div></div>';
+    const bt=boostTotal(s.seat);
+    const boostLine = bt>0 ? '<div style="margin-top:8px;text-align:center;font-size:12px;font-weight:800;color:#b97400;background:#fff7e6;border:1px solid #f0dfae;border-radius:9px;padding:6px">🎁 تحفيز إيجابي على المجموع العام: +'+toArabic(round1(bt))+'</div>' : '';
+    return '<div class="flstu">'+flStuLine(s,i)+'<div style="display:flex;gap:7px;margin-top:9px">'+boxes+'</div>'+boostLine+'</div>';
   }).join('');
 }
 
@@ -4448,6 +4518,7 @@ window.addEventListener('load', ()=>{
     <button id="flb-attend" class="fl-nav active" onclick="switchStuView('attend')"><span class="fl-ic">🟢</span><span class="fl-tx">الحضور</span></button>
     <button id="flb-follow" class="fl-nav" onclick="switchStuView('follow')"><span class="fl-ic">📌</span><span class="fl-tx">المتابعة</span></button>
     <button id="flb-record" class="fl-nav" onclick="switchStuView('record')"><span class="fl-ic">📋</span><span class="fl-tx">سجل المتابعة</span></button>
+    <button id="flb-worklog" class="fl-nav" onclick="gotoWorklog()"><span class="fl-ic">💼</span><span class="fl-tx">سجل الأعمال</span></button>
   </div>
 </div>
 <div id="followOv" class="flov">
